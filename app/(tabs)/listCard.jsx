@@ -300,5 +300,6 @@ const styles = StyleSheet.create({
     },
     ownerCard: {
         backgroundColor: 'rgba(255, 87, 71, 0.25)', // COLORS.primary
+        elevation: 0,
     }
 })

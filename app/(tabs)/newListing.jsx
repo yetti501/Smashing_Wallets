@@ -17,11 +17,14 @@ import { Ionicons } from '@expo/vector-icons'
 import * as ImagePicker from 'expo-image-picker'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import ThemedSafeArea from '../../components/ThemedSafeArea'
+import AddressAutocomplete from '../../components/AddressAutocomplete'
+import AddressValidationModal from '../../components/AddressValidationModal'
 import { useListings } from '../../contexts/ListingsContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { COLORS, SPACING, RADIUS } from '../../constants/Colors'
 import { EVENT_TYPES, EVENT_TYPE_LABELS } from '../../lib/appwrite'
 import { imageService } from '../../lib/imageService'
+import googlePlacesService from '../../lib/googlePlacesService'
 
 export default function NewListingScreen() {
     const { user } = useAuth()
@@ -40,6 +43,12 @@ export default function NewListingScreen() {
     const [showEndTimePicker, setShowEndTimePicker] = useState(false)
     const [timePickerValue, setTimePickerValue] = useState(new Date())
 
+    // Address validation state
+    const [addressValidated, setAddressValidated] = useState(false)
+    const [validationModalVisible, setValidationModalVisible] = useState(false)
+    const [validationResult, setValidationResult] = useState(null)
+    const [isValidating, setIsValidating] = useState(false)
+
     // Form state
     const [formData, setFormData] = useState({
         title: '',
@@ -47,6 +56,9 @@ export default function NewListingScreen() {
         eventType: EVENT_TYPES.YARD_SALE,
         location: '',
         area: '',
+        latitude: null,
+        longitude: null,
+        placeId: '',
         date: '',
         startDate: '',
         endDate: '',
@@ -66,6 +78,112 @@ export default function NewListingScreen() {
 
     const handleInputChange = (field, value) => {
         setFormData(prev => ({ ...prev, [field]: value }))
+    }
+
+    // Handle address selection from autocomplete
+    const handleAddressSelect = (addressData) => {
+        if (addressData) {
+            setFormData(prev => ({
+                ...prev,
+                location: addressData.location,
+                latitude: addressData.latitude,
+                longitude: addressData.longitude,
+                placeId: addressData.placeId,
+                area: addressData.area || prev.area,
+            }))
+            setAddressValidated(addressData.isValidated || false)
+        } else {
+            // Cleared
+            setFormData(prev => ({
+                ...prev,
+                location: '',
+                latitude: null,
+                longitude: null,
+                placeId: '',
+            }))
+            setAddressValidated(false)
+        }
+    }
+
+    // Handle manual address text change (user typing without selecting)
+    const handleAddressTextChange = (text) => {
+        setFormData(prev => ({ ...prev, location: text }))
+        setAddressValidated(false) // Reset validation when user edits
+    }
+
+    // Validate address when user hasn't selected from autocomplete
+    const validateManualAddress = async () => {
+        if (!formData.location.trim()) return true // Will be caught by form validation
+        
+        if (addressValidated) return true // Already validated via autocomplete
+
+        setIsValidating(true)
+        setValidationModalVisible(true)
+
+        try {
+            const result = await googlePlacesService.validateAddress(formData.location)
+            setValidationResult(result)
+            setIsValidating(false)
+
+            if (result.isValid) {
+                // Auto-update with validated data
+                setFormData(prev => ({
+                    ...prev,
+                    location: result.formattedAddress || prev.location,
+                    latitude: result.latitude,
+                    longitude: result.longitude,
+                    placeId: result.placeId || '',
+                }))
+                setAddressValidated(true)
+                return true
+            }
+
+            // If not valid, modal will show options
+            return false
+        } catch (error) {
+            console.error('Error validating address:', error)
+            setIsValidating(false)
+            setValidationModalVisible(false)
+            return true // Allow submission on error
+        }
+    }
+
+    // Handle using suggested address from validation
+    const handleUseSuggestedAddress = () => {
+        if (validationResult?.suggestedAddress) {
+            setFormData(prev => ({
+                ...prev,
+                location: validationResult.suggestedAddress,
+                latitude: validationResult.latitude,
+                longitude: validationResult.longitude,
+                placeId: validationResult.placeId || '',
+            }))
+            setAddressValidated(true)
+        }
+        setValidationModalVisible(false)
+        // Continue with submission
+        proceedWithSubmission()
+    }
+
+    // Handle keeping original address
+    const handleKeepOriginalAddress = async () => {
+        // Try to geocode the original address to get lat/lng
+        if (!formData.latitude || !formData.longitude) {
+            const geocodeResult = await googlePlacesService.geocodeAddress(formData.location)
+            if (geocodeResult) {
+                setFormData(prev => ({
+                    ...prev,
+                    latitude: geocodeResult.latitude,
+                    longitude: geocodeResult.longitude,
+                    placeId: geocodeResult.placeId || '',
+                    area: prev.area || geocodeResult.neighborhood || geocodeResult.city || '',
+                }))
+            }
+        }
+        setAddressValidated(true)
+        setValidationModalVisible(false)
+        // Continue with submission
+        proceedWithSubmission()
     }
 
     // Format date to YYYY-MM-DD
@@ -337,6 +455,21 @@ export default function NewListingScreen() {
             return
         }
         if (!validateForm()) return
+
+        // Check if address needs validation
+        if (!addressValidated && formData.location.trim()) {
+            const isValid = await validateManualAddress()
+            if (!isValid) {
+                // Modal is showing, wait for user action
+                return
+            }
+        }
+
+        // Proceed with submission
+        proceedWithSubmission()
+    }
+
+    const proceedWithSubmission = async () => {
         setSubmitting(true)
         try {
             // Prepare data for submission
@@ -423,6 +556,7 @@ export default function NewListingScreen() {
                 <ScrollView 
                     style={styles.form}
                     showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
                 >
                     {/* Event Type */}
                     <View style={styles.section}>
@@ -642,17 +776,26 @@ export default function NewListingScreen() {
                         </View>
                     </View>
 
-                    {/* Location */}
-                    <View style={styles.section}>
-                        <Text style={styles.label}>Location *</Text>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="123 Main St, Phoenix, AZ 85001"
-                            placeholderTextColor={COLORS.textTertiary}
+                    {/* Location with Autocomplete */}
+                    <View style={[styles.section, { zIndex: 1000 }]}>
+                        <View style={styles.labelRow}>
+                            <Text style={styles.label}>Location *</Text>
+                            {addressValidated && (
+                                <View style={styles.validatedBadge}>
+                                    <Ionicons name="checkmark-circle" size={14} color="#22C55E" />
+                                    <Text style={styles.validatedText}>Verified</Text>
+                                </View>
+                            )}
+                        </View>
+                        <AddressAutocomplete
                             value={formData.location}
-                            onChangeText={(text) => handleInputChange('location', text)}
-                            maxLength={255}
+                            onAddressSelect={handleAddressSelect}
+                            onChangeText={handleAddressTextChange}
+                            placeholder="123 Main St, Phoenix, AZ 85001"
                         />
+                        <Text style={styles.helperText}>
+                            Start typing to see address suggestions
+                        </Text>
                     </View>
 
                     {/* Area */}
@@ -666,6 +809,9 @@ export default function NewListingScreen() {
                             onChangeText={(text) => handleInputChange('area', text)}
                             maxLength={50}
                         />
+                        <Text style={styles.helperText}>
+                            Auto-filled from address, but you can edit it
+                        </Text>
                     </View>
 
                     {/* Price */}
@@ -682,39 +828,35 @@ export default function NewListingScreen() {
                     </View>
 
                     {/* Contact */}
-                    {/* <ThemedInfoCard style={styles.section}> */}
-                        {/* <Text style={styles.sectionTitle}>Contact Info</Text> */}
-                        
-                        <View style={styles.subsection}>
-                            <Text style={styles.label}>Phone</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="(555) 123-4567"
-                                placeholderTextColor={COLORS.textTertiary}
-                                value={formData.contactPhone}
-                                onChangeText={(text) => {
-                                    const formatted = formatPhoneNumber(text)
-                                    handleInputChange('contactPhone', formatted)}
-                                }
-                                keyboardType="phone-pad"
-                                maxLength={14}
-                            />
-                        </View>
+                    <View style={styles.subsection}>
+                        <Text style={styles.label}>Phone</Text>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="(555) 123-4567"
+                            placeholderTextColor={COLORS.textTertiary}
+                            value={formData.contactPhone}
+                            onChangeText={(text) => {
+                                const formatted = formatPhoneNumber(text)
+                                handleInputChange('contactPhone', formatted)}
+                            }
+                            keyboardType="phone-pad"
+                            maxLength={14}
+                        />
+                    </View>
 
-                        <View style={styles.subsection}>
-                            <Text style={styles.label}>Email</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="email@example.com"
-                                placeholderTextColor={COLORS.textTertiary}
-                                value={formData.contactEmail}
-                                onChangeText={(text) => handleInputChange('contactEmail', text)}
-                                keyboardType="email-address"
-                                autoCapitalize="none"
-                                maxLength={255}
-                            />
-                        </View>
-                    {/* </ThemedInfoCard> */}
+                    <View style={styles.subsection}>
+                        <Text style={styles.label}>Email</Text>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="email@example.com"
+                            placeholderTextColor={COLORS.textTertiary}
+                            value={formData.contactEmail}
+                            onChangeText={(text) => handleInputChange('contactEmail', text)}
+                            keyboardType="email-address"
+                            autoCapitalize="none"
+                            maxLength={255}
+                        />
+                    </View>
 
                     {/* Tags */}
                     <View style={styles.section}>
@@ -750,47 +892,6 @@ export default function NewListingScreen() {
                         )}
                     </View>
 
-                    {/* Image Upload */}
-                    {/* Will come back to this later. */}
-                    {/* <View style={styles.section}>
-                        <Text style={styles.label}>Event Image</Text>
-
-                        {formData.image ? (
-                            <View>
-                                <Image
-                                    source={{ uri: formData.image}}
-                                    style={styles.imagePreview}
-                                    resizeMode="cover"
-                                />
-                                <TouchableOpacity
-                                    style={styles.changeImageButton}
-                                    onPress={pickImage}
-                                    disabled={uploading}
-                                >
-                                    <Ionicons name="images" size={20} color={COLORS.primary} />
-                                    <Text style={styles.changeImageButtonText}>
-                                        {uploading ? 'Uploading...' : 'Change Image'}
-                                    </Text>
-                                </TouchableOpacity>
-                            </View>
-                        ) : (
-                            <TouchableOpacity
-                                style={styles.imagePickerButton}
-                                onPress={pickImage}
-                                disabled={uploading}
-                            >
-                                <Ionicons
-                                    name="image-outline"
-                                    size={40}
-                                    color={COLORS.textTertiary}
-                                />
-                                <Text style={styles.imagePickerText}>
-                                    {uploading ? 'Uploading...' : 'Add Event Image'}
-                                </Text>
-                            </TouchableOpacity>
-                        )}
-                    </View> */}
-
                     {/* Submit */}
                     <TouchableOpacity
                         style={styles.submitButton}
@@ -809,6 +910,17 @@ export default function NewListingScreen() {
                     <View style={{ height: 50 }} />
                 </ScrollView>
             </View>
+
+            {/* Address Validation Modal */}
+            <AddressValidationModal
+                visible={validationModalVisible}
+                onClose={() => setValidationModalVisible(false)}
+                validationResult={validationResult}
+                originalAddress={formData.location}
+                onUseSuggested={handleUseSuggestedAddress}
+                onKeepOriginal={handleKeepOriginalAddress}
+                isValidating={isValidating}
+            />
         </ThemedSafeArea>
     )
 }
@@ -830,6 +942,26 @@ const styles = StyleSheet.create({
     subsection: { marginBottom: SPACING.md },
     sectionTitle: { fontSize: 18, fontWeight: '600', color: COLORS.text, marginBottom: SPACING.md },
     label: { fontSize: 14, fontWeight: '600', color: COLORS.text, marginBottom: SPACING.sm },
+    labelRow: { 
+        flexDirection: 'row', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        marginBottom: SPACING.sm,
+    },
+    validatedBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        backgroundColor: 'rgba(34, 197, 94, 0.1)',
+        paddingHorizontal: SPACING.sm,
+        paddingVertical: 2,
+        borderRadius: RADIUS.full,
+    },
+    validatedText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#22C55E',
+    },
     helperText: { fontSize: 12, color: COLORS.textSecondary, marginTop: 4 },
     input: {
         backgroundColor: COLORS.surface,
@@ -921,41 +1053,4 @@ const styles = StyleSheet.create({
         marginTop: SPACING.xl,
     },
     submitButtonText: { fontSize: 16, fontWeight: '600', color: COLORS.buttonPrimaryText },
-    imagePickerButton: {
-    height: 200,
-    backgroundColor: COLORS.surface,
-    borderWidth: 2,
-    borderColor: COLORS.border,
-    borderStyle: 'dashed',
-    borderRadius: RADIUS.md,
-    justifyContent: 'center',
-    alignItems: 'center',
-},
-imagePickerText: {
-    fontSize: 16,
-    color: COLORS.textTertiary,
-    marginTop: SPACING.sm,
-},
-imagePreview: {
-    width: '100%',
-    height: 200,
-    borderRadius: RADIUS.md,
-    marginBottom: SPACING.md,
-},
-changeImageButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.sm,
-    padding: SPACING.md,
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-},
-changeImageButtonText: {
-    fontSize: 14,
-    color: COLORS.primary,
-    fontWeight: '600',
-},
 })

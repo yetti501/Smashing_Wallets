@@ -175,57 +175,115 @@ export default function ViewListingScreen() {
             </ThemedSafeArea>
         )
     }
-    
+
     return (
-        <ThemedSafeArea scrollable={false} edges={['top']}>
-            <View style={styles.container}>
-                <ThemedHeader
-                    title="All Events"
-                    subtitle="Discover Loacal Events"
-                />
-                <FlatList
-                    data={filteredListings}
-                    keyExtractor={(item) => item.$id}
-                    renderItem={({ item }) => (
-                        <ListCard
-                            listing={item}
-                            onPress={() => handleListingPress(item)}
-                            showAuthor={true}
-                            currentUser={user}
-                        />
-                    )}
-                    ListHeaderComponent={renderHeader}
-                    ListEmptyComponent={
-                        <EmptyState
-                            icon="calendar-outline"
-                            title={hasActiveFilters ? "No Events Found" : "No Events Yet"}
-                            subtitle={hasActiveFilters ? "Try adjusting your filters" : "Be the first to create an event!"}
-                        />
-                    }
-                    contentContainerStyle={styles.listContent}  // Fixed typo
-                    showsVerticalScrollIndicator={false}
-                    refreshing={refreshing}
-                    onRefresh={refreshList}
-                />
-
-                {user && (
-                    <ThemedFAB
-                        icon="add"
-                        onPress={handleAddListing}
-                        style={styles.fab}
+        <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+            <ThemedSafeArea scrollable={false} edges={['top']}>
+                <View style={styles.container}>
+                    <ThemedHeader
+                        title="All Events"
+                        subtitle="Discover Loacal Events"
                     />
-                )}
+                    <FlatList
+                        data={filteredListings}
+                        keyExtractor={(item) => item.$id}
+                        renderItem={({ item }) => (
+                            <ListCard
+                                listing={item}
+                                onPress={() => handleListingPress(item)}
+                                showAuthor={true}
+                                currentUser={user}
+                            />
+                        )}
+                        ListHeaderComponent={renderHeader}
+                        ListEmptyComponent={
+                            <EmptyState
+                                icon="calendar-outline"
+                                title={hasActiveFilters ? "No Events Found" : "No Events Yet"}
+                                subtitle={hasActiveFilters ? "Try adjusting your filters" : "Be the first to create an event!"}
+                            />
+                        }
+                        contentContainerStyle={styles.listContent}
+                        showsVerticalScrollIndicator={false}
+                        refreshing={refreshing}
+                        onRefresh={refreshList}
+                    />
 
-                {/* Filter Modal */}
-                <FilterModal
-                    visible={filterModalVisible}
-                    onClose={() => setFilterModalVisible(false)}
-                    filters={filters}
-                    setFilters={setFilters}
+                    {/* Filter Modal */}
+                    <FilterModal
+                        visible={filterModalVisible}
+                        onClose={() => setFilterModalVisible(false)}
+                        filters={filters}
+                        setFilters={setFilters}
+                    />
+                </View>
+            </ThemedSafeArea>
+
+            {/* FAB outside ThemedSafeArea but inside the flex container */}
+            {user && (
+                <ThemedFAB
+                    icon="add"
+                    onPress={handleAddListing}
+                    style={{
+                        position: 'absolute',
+                        right: 20,
+                        bottom: 30,
+                    }}
                 />
-            </View>
-        </ThemedSafeArea>
+            )}
+        </View>
     )
+    
+    // return (
+    //     <ThemedSafeArea scrollable={false} edges={['top']}>
+    //         <View style={styles.container}>
+    //             <ThemedHeader
+    //                 title="All Events"
+    //                 subtitle="Discover Loacal Events"
+    //             />
+    //             <FlatList
+    //                 data={filteredListings}
+    //                 keyExtractor={(item) => item.$id}
+    //                 renderItem={({ item }) => (
+    //                     <ListCard
+    //                         listing={item}
+    //                         onPress={() => handleListingPress(item)}
+    //                         showAuthor={true}
+    //                         currentUser={user}
+    //                     />
+    //                 )}
+    //                 ListHeaderComponent={renderHeader}
+    //                 ListEmptyComponent={
+    //                     <EmptyState
+    //                         icon="calendar-outline"
+    //                         title={hasActiveFilters ? "No Events Found" : "No Events Yet"}
+    //                         subtitle={hasActiveFilters ? "Try adjusting your filters" : "Be the first to create an event!"}
+    //                     />
+    //                 }
+    //                 contentContainerStyle={styles.listContent}  // Fixed typo
+    //                 showsVerticalScrollIndicator={false}
+    //                 refreshing={refreshing}
+    //                 onRefresh={refreshList}
+    //             />
+
+    //             {user && (
+    //                 <ThemedFAB
+    //                     icon="add"
+    //                     onPress={handleAddListing}
+    //                     style={styles.fab}
+    //                 />
+    //             )}
+
+    //             {/* Filter Modal */}
+    //             <FilterModal
+    //                 visible={filterModalVisible}
+    //                 onClose={() => setFilterModalVisible(false)}
+    //                 filters={filters}
+    //                 setFilters={setFilters}
+    //             />
+    //         </View>
+    //     </ThemedSafeArea>
+    // )
 }
 
 // Filter Modal Conent

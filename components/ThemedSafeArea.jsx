@@ -20,7 +20,7 @@ import { COLORS } from '../constants/Colors'
 const ThemedSafeArea = ({
     children, 
     scrollable = true, 
-    style, 
+    style,  
     contentContainerStyle, 
     centered = false, 
     keyboardAvoiding = true, 
