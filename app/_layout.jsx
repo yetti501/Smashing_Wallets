@@ -47,6 +47,16 @@ const TabsLayout = () => {
                 }}
             />
             
+            {/* <Tabs.Screen
+                name='(tabs)'
+                options={{
+                    title:'Listings',
+                    tabBarIcon: ({ color, size }) => (
+                        <Ionicons name="list-outline" size={size} color={color} />
+                    )
+                }}
+            /> */}
+
             <Tabs.Screen
                 name='(tabs)'
                 options={{
@@ -55,7 +65,17 @@ const TabsLayout = () => {
                         <Ionicons name="list-outline" size={size} color={color} />
                     )
                 }}
+                listeners={({ navigation }) => ({
+                    tabPress: (e) => {
+                        e.preventDefault()
+                        navigation.reset({
+                            index: 0,
+                            routes: [{ name: '(tabs)', state: { routes: [{ name: 'viewListings' }] } }],
+                        })
+                    }
+                })}
             />
+
             <Tabs.Screen
                 name='(test)'
                 options={{

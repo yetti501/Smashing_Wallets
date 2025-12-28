@@ -6,7 +6,8 @@ import { useState, useCallback, useEffect } from 'react'
 import ThemedSafeArea from '../../components/ThemedSafeArea'
 import ThemedHeader from '../../components/ThemedHeader'
 import ThemedInfoCard from '../../components/ThemedInfoCard'
-import ListCard from './listCard'
+// import ListCard from './listCard'
+import ListCard from '../../components/ListCard'
 import EmptyState from '../../components/EmptyState'
 import ThemedFAB from '../../components/ThemedFAB'
 import { useListings } from '../../contexts/ListingsContext'
@@ -41,7 +42,8 @@ export default function ViewListingScreen() {
 
     useFocusEffect(
         useCallback(() => {
-            console.log('>>> useFocusEffect: screen focused')
+            console.log('>>> useFocusEffect: screen focused, user:', user?.$id)
+            checkUser()  // Re-check auth state when screen is focused
             refreshList().finally(() => setInitialLoad(false))
         }, [])
     )
@@ -303,6 +305,7 @@ export default function ViewListingScreen() {
                     subtitle={filters.showSavedOnly ? `${filteredListings.length} saved event${filteredListings.length !== 1 ? 's' : ''}` : "Discover Local Events"}
                 />
                 <FlatList
+                    key={user?.$id || 'logged-out'}
                     data={filteredListings}
                     extraData={user}
                     keyExtractor={(item) => item.$id}

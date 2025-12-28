@@ -375,7 +375,7 @@ export default function MapScreen() {
     const handleCardPress = () => {
         if (selectedEvent) {
             router.push({
-                pathname: '/(map)/listingDetails',
+                pathname: '/(tabs)/listingDetails',
                 params: { listingId: selectedEvent.$id }
             })
         }

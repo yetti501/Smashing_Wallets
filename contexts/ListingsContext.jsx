@@ -111,11 +111,12 @@ export const ListingsProvider = ({ children }) => {
     const [loading, setLoading] = useState(false)
     const [refreshing, setRefreshing] = useState(false)
     const [error, setError] = useState(null)
-    const { user } = useAuth()
+    const { user, onLogout, onLogin } = useAuth()
 
     // Extracted and reusable fetch function
     const fetchListings = async () => {
         try {
+            console.log('>>> ListingsContext: fetching listings')
             const fetchedListings = await listingService.getAllListings([
                 Query.orderDesc('$createdAt')
             ])
@@ -127,6 +128,7 @@ export const ListingsProvider = ({ children }) => {
         }
     }
 
+    // Initial load
     useEffect(() => {
         const loadListings = async () => { 
             setLoading(true)
@@ -135,6 +137,27 @@ export const ListingsProvider = ({ children }) => {
         }
         loadListings()
     }, [])
+
+    // Register for login/logout events to refresh listings
+    useEffect(() => {
+        console.log('>>> ListingsContext: registering login/logout listeners')
+        
+        const unsubscribeLogout = onLogout(() => {
+            console.log('>>> ListingsContext: logout detected, refreshing listings')
+            fetchListings()
+        })
+
+        const unsubscribeLogin = onLogin(() => {
+            console.log('>>> ListingsContext: login detected, refreshing listings')
+            fetchListings()
+        })
+
+        return () => {
+            console.log('>>> ListingsContext: cleanup - unregistering listeners')
+            unsubscribeLogout()
+            unsubscribeLogin()
+        }
+    }, [onLogout, onLogin])
 
     // Function to refresh listings (for pull-to-refresh)
     const refreshList = async () => {
@@ -194,7 +217,7 @@ export const ListingsProvider = ({ children }) => {
 
             await listingService.deleteListing(listingId)
 
-            // Revmoe the listing from state
+            // Remove the listing from state
             setListings(prev => prev.filter(listing => listing.$id !== listingId))
 
             return true
@@ -206,8 +229,6 @@ export const ListingsProvider = ({ children }) => {
         }
     }
 
-    // Add more functions here as you build them out
-
     const value = {
         listings,
         loading,
@@ -218,7 +239,6 @@ export const ListingsProvider = ({ children }) => {
         getListing: listingService.getListing,
         updateListing,
         deleteListing
-        // Add more functions to the context value as needed
     }
 
     return (

@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { StyleSheet, View, TouchableOpacity, Image, Text } from 'react-native'
+import { StyleSheet, View, TouchableOpacity, Image, Text, Platform } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { COLORS, SPACING, RADIUS } from '../constants/Colors'
 import { EVENT_TYPE_LABELS, EVENT_TYPE_ICONS } from '../lib/appwrite'
@@ -216,11 +216,17 @@ const styles = StyleSheet.create({
         borderRadius: RADIUS.lg,
         marginBottom: SPACING.lg,
         overflow: 'hidden',
-        shadowColor: COLORS.shadow,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-        elevation: 3,
+        ...Platform.select({
+            ios: {
+                shadowColor: COLORS.shadow,
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.1,
+                shadowRadius: 8,
+            },
+            android: {
+                elevation: 3,
+            },
+        }),
     },
     imageContainer: {
         width: '100%',
@@ -372,6 +378,13 @@ const styles = StyleSheet.create({
         backgroundColor: COLORS.primary
     },
     ownerCard: {
-        backgroundColor: 'rgba(255, 87, 71, 0.25)',
+        ...Platform.select({
+            ios: {
+                backgroundColor: 'rgba(255, 87, 71, 0.25)',
+            },
+            android: {
+                backgroundColor: '#FFE4E1', // Solid light coral - avoids transparency + elevation artifacts
+            },
+        }),
     }
 })
