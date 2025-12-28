@@ -1,6 +1,7 @@
 import { account } from '../lib/appwrite'
 import { ID } from 'appwrite'
-import React, { createContext, useContext, useState, useEffect } from 'react'
+import { router } from 'expo-router'
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 
 const AuthContext = createContext()
 
@@ -111,7 +112,6 @@ export const authService = {
     // ============================================
     async sendEmailVerification(redirectUrl){
         try {
-            // redirect URL example: 
             await account.createVerification(redirectUrl)
         } catch (error) {
             throw error
@@ -190,7 +190,6 @@ export const authService = {
     // ============================================
     async deleteAccount() {
         try {
-            // WARNING: This permanently deletes the user account
             await account.delete()
         } catch (error) {
             throw error
@@ -202,20 +201,93 @@ export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null)
     const [loading, setLoading] = useState(true)
 
+        console.log('>>> AuthProvider render, user:', user ? user.$id : null)
+
+    
+    // Store logout and login listeners
+    const logoutListenersRef = useRef(new Set())
+    const loginListenersRef = useRef(new Set())
+
+    // useEffect(() => {
+    //     checkUser()
+    // }, [])
+
+    const [initialized, setInitialized] = useState(false)
+
     useEffect(() => {
-        checkUser()
-    }, [])
+        if (!initialized) {
+            checkUser()
+            setInitialized(true)
+        }
+    }, [initialized])
 
     const checkUser = async () => {
-        try {
-            const currentUser = await authService.getCurrentUser()
-            setUser(currentUser)
-        } catch (error) {
-            setUser(null)
-        } finally {
-            setLoading(false)
-        }
+    console.log('>>> AuthContext: checkUser called')
+    try {
+        const currentUser = await authService.getCurrentUser()
+        console.log('>>> AuthContext: checkUser got user:', currentUser ? currentUser.$id : null)
+        setUser(currentUser)
+    } catch (error) {
+        console.log('>>> AuthContext: checkUser error:', error)
+        setUser(null)
+    } finally {
+        setLoading(false)
     }
+}
+
+    // ============================================
+    // LOGIN/LOGOUT LISTENER SYSTEM
+    // ============================================
+    
+    /**
+     * Register a callback to be called when user logs out
+     * Returns an unsubscribe function
+     */
+    const onLogout = useCallback((callback) => {
+        logoutListenersRef.current.add(callback)
+        return () => {
+            logoutListenersRef.current.delete(callback)
+        }
+    }, [])
+
+    /**
+     * Register a callback to be called when user logs in
+     * Returns an unsubscribe function
+     */
+    const onLogin = useCallback((callback) => {
+        loginListenersRef.current.add(callback)
+        return () => {
+            loginListenersRef.current.delete(callback)
+        }
+    }, [])
+
+    /**x
+     * Notify all logout listeners
+     */
+    const notifyLogoutListeners = useCallback(() => {
+    console.log('>>> AuthContext: notifyLogoutListeners called, listeners:', logoutListenersRef.current.size)
+    logoutListenersRef.current.forEach(callback => {
+        try {
+            console.log('>>> AuthContext: calling a logout listener')
+            callback()
+        } catch (error) {
+            console.error('Error in logout listener:', error)
+        }
+    })
+}, [])
+
+    /**
+     * Notify all login listeners
+     */
+    const notifyLoginListeners = useCallback((loggedInUser) => {
+        loginListenersRef.current.forEach(callback => {
+            try {
+                callback(loggedInUser)
+            } catch (error) {
+                console.error('Error in login listener:', error)
+            }
+        })
+    }, [])
 
     // ============================================
     // AUTHENTICATION METHODS
@@ -223,18 +295,45 @@ export const AuthProvider = ({ children }) => {
     const login = async (email, password) => {
         const session = await authService.login(email, password)
         await checkUser()
+        
+        const loggedInUser = await authService.getCurrentUser()
+        notifyLoginListeners(loggedInUser)
+        
+        // router.replace('/')  // <-- Add this line
+        
         return session
     }
 
     const register = async (email, password, name) => {
         const response = await authService.register(email, password, name)
         await checkUser()
+        
+        // Get the updated user and notify listeners
+        const loggedInUser = await authService.getCurrentUser()
+        notifyLoginListeners(loggedInUser)
+        
         return response
     }
 
     const logout = async () => {
-        await authService.logout()
+        console.log('>>> AuthContext: logout called')
+        
+        // Clear user state FIRST
         setUser(null)
+        
+        try {
+            await authService.logout()
+            console.log('>>> AuthContext: appwrite logout successful')
+        } catch (error) {
+            console.error('Server logout error:', error)
+        }
+        
+        // Verify user is actually logged out
+        const checkResult = await authService.getCurrentUser()
+        console.log('>>> AuthContext: after logout, getCurrentUser returns:', checkResult)
+        
+        notifyLogoutListeners()
+        // router.replace('/')
     }
 
     // ============================================
@@ -308,6 +407,7 @@ export const AuthProvider = ({ children }) => {
     const deleteAllSessions = async () => {
         await authService.deleteAllSessions()
         setUser(null)
+        notifyLogoutListeners()
     }
 
     // ============================================
@@ -316,9 +416,8 @@ export const AuthProvider = ({ children }) => {
     const deleteAccount = async () => {
         await authService.deleteAccount()
         setUser(null)
+        notifyLogoutListeners()
     }
-
-
 
     const value = {
         user,
@@ -346,7 +445,10 @@ export const AuthProvider = ({ children }) => {
         deleteAccount,
         // Utility
         checkUser,
-        authService
+        authService,
+        // Auth event listeners
+        onLogout,
+        onLogin
     }
 
     return (

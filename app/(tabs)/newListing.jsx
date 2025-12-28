@@ -7,18 +7,17 @@ import {
     TouchableOpacity, 
     Alert,
     Text,
-    Image,
     Switch,
     ActivityIndicator,
     Platform
 } from 'react-native'
 import { router } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
-import * as ImagePicker from 'expo-image-picker'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import ThemedSafeArea from '../../components/ThemedSafeArea'
 import AddressAutocomplete from '../../components/AddressAutocomplete'
 import AddressValidationModal from '../../components/AddressValidationModal'
+import ImagePickerGrid from '../../components/ImagePickerGrid'
 import { useListings } from '../../contexts/ListingsContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { COLORS, SPACING, RADIUS } from '../../constants/Colors'
@@ -30,7 +29,7 @@ export default function NewListingScreen() {
     const { user } = useAuth()
     const { createListing } = useListings()
     const [submitting, setSubmitting] = useState(false)
-    const [uploading, setUploading] = useState(false)
+    const [uploadingImages, setUploadingImages] = useState(false)
     
     // Date picker state
     const [showDatePicker, setShowDatePicker] = useState(false)
@@ -48,6 +47,9 @@ export default function NewListingScreen() {
     const [validationModalVisible, setValidationModalVisible] = useState(false)
     const [validationResult, setValidationResult] = useState(null)
     const [isValidating, setIsValidating] = useState(false)
+
+    // Image state - array of { uri, isExisting }
+    const [selectedImages, setSelectedImages] = useState([])
 
     // Form state
     const [formData, setFormData] = useState({
@@ -67,11 +69,12 @@ export default function NewListingScreen() {
         price: '',
         contactPhone: '',
         contactEmail: '',
+        showPhone: true,
+        showEmail: true,
         tags: [],
         featured: false,
         multiday: false,
         isRecurring: false,
-        image: ''
     })
 
     const [tagInput, setTagInput] = useState('')
@@ -471,14 +474,68 @@ export default function NewListingScreen() {
 
     const proceedWithSubmission = async () => {
         setSubmitting(true)
+        
+        try {
+            let imageUrls = []
+            
+            // Upload images if any are selected
+            if (selectedImages.length > 0) {
+                setUploadingImages(true)
+                
+                try {
+                    const imageUris = selectedImages.map(img => img.uri)
+                    const uploadResult = await imageService.uploadMultipleImages(
+                        imageUris,
+                        (current, total) => {
+                            console.log(`Uploading image ${current} of ${total}`)
+                        }
+                    )
+                    imageUrls = uploadResult.urls
+                } catch (uploadError) {
+                    console.error('Error uploading images:', uploadError)
+                    Alert.alert(
+                        'Image Upload Failed',
+                        'Failed to upload images. Would you like to continue without images?',
+                        [
+                            { 
+                                text: 'Cancel', 
+                                style: 'cancel',
+                                onPress: () => {
+                                    setSubmitting(false)
+                                    setUploadingImages(false)
+                                }
+                            },
+                            { 
+                                text: 'Continue', 
+                                onPress: () => finishSubmission([])
+                            }
+                        ]
+                    )
+                    return
+                } finally {
+                    setUploadingImages(false)
+                }
+            }
+            
+            await finishSubmission(imageUrls)
+        } catch (error) {
+            Alert.alert('Error', error.message || 'Failed to create event')
+            console.error('Error creating listing:', error)
+            setSubmitting(false)
+        }
+    }
+
+    const finishSubmission = async (imageUrls) => {
         try {
             // Prepare data for submission
             const listingData = {
                 ...formData,
                 // Set date field for single-day events
                 date: formData.multiday ? formData.startDate : (formData.date || formData.startDate),
-                status: 'active'
+                status: 'active',
+                images: imageUrls,
             }
+            
             await createListing(listingData)
             
             Alert.alert('Success', 'Event created successfully!', [
@@ -503,37 +560,8 @@ export default function NewListingScreen() {
         router.back()
     }
 
-    const pickImage = async () => {
-        // Request permission
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
-
-        if(status !== 'granted') {
-            Alert.alert('Permission needed', 'Please allow access to our photos')
-            return
-        }
-
-        const result = await ImagePicker.launchImageLibraryAsync({
-            mediaType: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true, 
-            aspect: [16, 9],
-            quality: 0.8
-        })
-
-        if(!result.canceled) {
-            setUploading(true)
-            try{
-                const imageUrl = await imageService.uploadImage(result.assets[0].uri)
-                handleInputChange('image', imageUrl)
-            } catch (error) {
-                Alert.alert('Error', 'Failed to upload image')
-            } finally {
-                setUploading(false)
-            }
-        }
-    }
-
     return (
-        <ThemedSafeArea scrollable={false}>
+        <ThemedSafeArea scrollable={false} extraBottomPadding={0} edges={['top']}>
             <View style={styles.container}>
                 {/* Header */}
                 <View style={styles.header}>
@@ -608,6 +636,23 @@ export default function NewListingScreen() {
                             numberOfLines={4}
                             maxLength={5000}
                         />
+                    </View>
+
+                    {/* Images Section */}
+                    <View style={styles.section}>
+                        <Text style={styles.label}>Photos</Text>
+                        <Text style={styles.helperText}>
+                            Add up to 5 photos to showcase your event
+                        </Text>
+                        <View style={{ marginTop: SPACING.sm }}>
+                            <ImagePickerGrid
+                                images={selectedImages}
+                                onImagesChange={setSelectedImages}
+                                maxImages={5}
+                                disabled={submitting}
+                                uploading={uploadingImages}
+                            />
+                        </View>
                     </View>
 
                     {/* Multi-day Toggle */}
@@ -828,34 +873,93 @@ export default function NewListingScreen() {
                     </View>
 
                     {/* Contact */}
-                    <View style={styles.subsection}>
-                        <Text style={styles.label}>Phone</Text>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="(555) 123-4567"
-                            placeholderTextColor={COLORS.textTertiary}
-                            value={formData.contactPhone}
-                            onChangeText={(text) => {
-                                const formatted = formatPhoneNumber(text)
-                                handleInputChange('contactPhone', formatted)}
-                            }
-                            keyboardType="phone-pad"
-                            maxLength={14}
-                        />
-                    </View>
+                    <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>Contact Information</Text>
+                        <Text style={styles.contactHelperText}>
+                            Add contact details for interested buyers. Toggle visibility for each.
+                        </Text>
 
-                    <View style={styles.subsection}>
-                        <Text style={styles.label}>Email</Text>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="email@example.com"
-                            placeholderTextColor={COLORS.textTertiary}
-                            value={formData.contactEmail}
-                            onChangeText={(text) => handleInputChange('contactEmail', text)}
-                            keyboardType="email-address"
-                            autoCapitalize="none"
-                            maxLength={255}
-                        />
+                        <View style={styles.contactField}>
+                            <View style={styles.contactInputRow}>
+                                <View style={styles.contactInputWrapper}>
+                                    <Text style={styles.label}>Phone</Text>
+                                    <TextInput
+                                        style={[
+                                            styles.input,
+                                            !formData.showPhone && styles.inputDisabled
+                                        ]}
+                                        placeholder="(555) 123-4567"
+                                        placeholderTextColor={COLORS.textTertiary}
+                                        value={formData.contactPhone}
+                                        onChangeText={(text) => {
+                                            const formatted = formatPhoneNumber(text)
+                                            handleInputChange('contactPhone', formatted)}
+                                        }
+                                        keyboardType="phone-pad"
+                                        maxLength={14}
+                                    />
+                                </View>
+                            </View>
+                            <View style={styles.visibilityToggle}>
+                                <Ionicons 
+                                    name={formData.showPhone ? "eye" : "eye-off"} 
+                                    size={18} 
+                                    color={formData.showPhone ? COLORS.primary : COLORS.textTertiary} 
+                                />
+                                <Text style={[
+                                    styles.visibilityText,
+                                    formData.showPhone && styles.visibilityTextActive
+                                ]}>
+                                    {formData.showPhone ? 'Visible' : 'Hidden'}
+                                </Text>
+                                <Switch
+                                    value={formData.showPhone}
+                                    onValueChange={(value) => handleInputChange('showPhone', value)}
+                                    trackColor={{ false: COLORS.border, true: COLORS.primaryLight }}
+                                    thumbColor={formData.showPhone ? COLORS.primary : COLORS.textTertiary}
+                                />
+                            </View>
+                        </View>
+
+                        <View style={styles.contactField}>
+                            <View style={styles.contactInputRow}>
+                                <View style={styles.contactInputWrapper}>
+                                    <Text style={styles.label}>Email</Text>
+                                    <TextInput
+                                        style={[
+                                            styles.input,
+                                            !formData.showEmail && styles.inputDisabled
+                                        ]}
+                                        placeholder="email@example.com"
+                                        placeholderTextColor={COLORS.textTertiary}
+                                        value={formData.contactEmail}
+                                        onChangeText={(text) => handleInputChange('contactEmail', text)}
+                                        keyboardType="email-address"
+                                        autoCapitalize="none"
+                                        maxLength={255}
+                                    />
+                                </View>
+                            </View>
+                            <View style={styles.visibilityToggle}>
+                                <Ionicons 
+                                    name={formData.showEmail ? "eye" : "eye-off"} 
+                                    size={18} 
+                                    color={formData.showEmail ? COLORS.primary : COLORS.textTertiary} 
+                                />
+                                <Text style={[
+                                    styles.visibilityText,
+                                    formData.showEmail && styles.visibilityTextActive
+                                ]}>
+                                    {formData.showEmail ? 'Visible' : 'Hidden'}
+                                </Text>
+                                <Switch
+                                    value={formData.showEmail}
+                                    onValueChange={(value) => handleInputChange('showEmail', value)}
+                                    trackColor={{ false: COLORS.border, true: COLORS.primaryLight }}
+                                    thumbColor={formData.showEmail ? COLORS.primary : COLORS.textTertiary}
+                                />
+                            </View>
+                        </View>
                     </View>
 
                     {/* Tags */}
@@ -894,12 +998,20 @@ export default function NewListingScreen() {
 
                     {/* Submit */}
                     <TouchableOpacity
-                        style={styles.submitButton}
+                        style={[
+                            styles.submitButton,
+                            submitting && styles.submitButtonDisabled
+                        ]}
                         onPress={handleSubmit}
                         disabled={submitting}
                     >
                         {submitting ? (
-                            <ActivityIndicator size="small" color={COLORS.buttonPrimaryText} />
+                            <View style={styles.submittingContainer}>
+                                <ActivityIndicator size="small" color={COLORS.buttonPrimaryText} />
+                                <Text style={styles.submitButtonText}>
+                                    {uploadingImages ? 'Uploading Images...' : 'Creating Event...'}
+                                </Text>
+                            </View>
                         ) : (
                             <Text style={styles.submitButtonText}>
                                 Create Event
@@ -1052,5 +1164,55 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginTop: SPACING.xl,
     },
+    submitButtonDisabled: {
+        opacity: 0.7,
+    },
     submitButtonText: { fontSize: 16, fontWeight: '600', color: COLORS.buttonPrimaryText },
+    submittingContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: SPACING.sm,
+    },
+    // Contact visibility styles
+    contactHelperText: {
+        fontSize: 13,
+        color: COLORS.textSecondary,
+        marginBottom: SPACING.md,
+    },
+    contactField: {
+        marginBottom: SPACING.md,
+        backgroundColor: COLORS.surface,
+        borderRadius: RADIUS.md,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        overflow: 'hidden',
+    },
+    contactInputRow: {
+        padding: SPACING.md,
+    },
+    contactInputWrapper: {
+        flex: 1,
+    },
+    visibilityToggle: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: SPACING.sm,
+        paddingHorizontal: SPACING.md,
+        paddingVertical: SPACING.sm,
+        backgroundColor: COLORS.surfaceSecondary,
+        borderTopWidth: 1,
+        borderTopColor: COLORS.border,
+    },
+    visibilityText: {
+        flex: 1,
+        fontSize: 13,
+        color: COLORS.textTertiary,
+    },
+    visibilityTextActive: {
+        color: COLORS.primary,
+        fontWeight: '500',
+    },
+    inputDisabled: {
+        opacity: 0.5,
+    },
 })

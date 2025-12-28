@@ -1,8 +1,7 @@
-import { StyleSheet, View, FlatList, TouchableOpacity, Pressable, Text, Modal } from 'react-native'
-import { router } from 'expo-router'
+import { StyleSheet, View, FlatList, TouchableOpacity, Pressable, Text, Modal, Alert, ActivityIndicator } from 'react-native'
+import { router, useFocusEffect } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
-import { useState } from 'react'
-
+import { useState, useCallback, useEffect } from 'react'
 
 import ThemedSafeArea from '../../components/ThemedSafeArea'
 import ThemedHeader from '../../components/ThemedHeader'
@@ -11,41 +10,80 @@ import ListCard from './listCard'
 import EmptyState from '../../components/EmptyState'
 import ThemedFAB from '../../components/ThemedFAB'
 import { useListings } from '../../contexts/ListingsContext'
+import { useSavedEvents } from '../../contexts/SavedEventsContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { COLORS, SPACING } from '../../constants/Colors'
 import { EVENT_TYPES, EVENT_TYPE_LABELS } from '../../lib/appwrite'
 
 export default function ViewListingScreen() {
-    const { user } = useAuth()
+    const { user, loading: authLoading, checkUser } = useAuth()
     const {
         listings,
         loading, 
         refreshing,
         refreshList
     } = useListings()
+    const { savedListingIds, savedCount } = useSavedEvents()
 
+    const [initialLoad, setInitialLoad] = useState(true)
     const [filterModalVisible, setFilterModalVisible] = useState(false)
     const [filters, setFilters] = useState({
         eventType: null, 
         search: '',
-        showPastEvents: false
+        showPastEvents: false,
+        showSavedOnly: false
     })
+
+    // DEBUG - remove after confirming fix
+    console.log('=== RENDER STATE ===')
+    console.log('user:', user ? user.$id : null)
+    console.log('savedCount:', savedCount)
+
+    useFocusEffect(
+        useCallback(() => {
+            console.log('>>> useFocusEffect: screen focused')
+            refreshList().finally(() => setInitialLoad(false))
+        }, [])
+    )
+
+    // Separately, respond to user changes
+    useEffect(() => {
+        console.log('>>> useEffect: user changed to:', user ? user.$id : null)
+    }, [user])
+
+    // Reset saved filter if user logs out
+    useEffect(() => {
+        if (!user && filters.showSavedOnly) {
+            setFilters(prev => ({
+                ...prev,
+                showSavedOnly: false
+            }))
+        }
+    }, [user])
 
     const getFilteredListings = () => {
         let filtered = [...listings]
+        
+        // Filter by saved events only
+        if (filters.showSavedOnly) {
+            filtered = filtered.filter(l => savedListingIds.has(l.$id))
+        }
+        
         // Filter by event type
-        if(filters.eventType){
+        if (filters.eventType) {
             filtered = filtered.filter(l => l.eventType === filters.eventType)
         }
+        
         // Filter by search term
-        if(filters.search) {
+        if (filters.search) {
             filtered = filtered.filter(l => 
                 l.title.toLowerCase().includes(filters.search.toLowerCase()) || 
-                l.location.toLowerCase(). includes(filters.search.toLowerCase())
+                l.location.toLowerCase().includes(filters.search.toLowerCase())
             )
         }
-        // Filter our past events 
-        if(!filters.showPastEvents) {
+        
+        // Filter out past events 
+        if (!filters.showPastEvents) {
             const today = new Date().toISOString().split('T')[0]
             filtered = filtered.filter(l => {
                 const eventDate = l.date || l.startDate 
@@ -58,27 +96,35 @@ export default function ViewListingScreen() {
 
     const filteredListings = getFilteredListings()
 
-    //Get upcoming events count
+    // Get upcoming events count
     const getUpComingCount = () => {
         const now = new Date()
         return listings.filter(listing => {
             const eventDate = listing.date || listing.startDate
-            if(!eventDate) return false
+            if (!eventDate) return false
             return new Date(eventDate) > now
         }).length
     }
+    
     // Push to open details page
     const handleListingPress = (listing) => {
         router.push({
             pathname: '(tabs)/listingDetails',
-            params: {listingId: listing.$id}
+            params: { listingId: listing.$id }
         })
     }
+    
     // Push to add new listings page 
     const handleAddListing = () => {
-        if(!user) {
-            alert('Please log into create an event')
-            // add a redirect to the login page
+        if (!user) {
+            Alert.alert(
+                'Login Required',
+                'Please log in to create an event.',
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Log In', onPress: () => router.push('/login') }
+                ]
+            )
             return
         } 
         router.push('/(tabs)/newListing')
@@ -88,11 +134,27 @@ export default function ViewListingScreen() {
         setFilters({
             eventType: null, 
             search: '',
-            showPastEvents: false
+            showPastEvents: false,
+            showSavedOnly: false
         })
     }
 
-    const hasActiveFilters = filters.eventType || filters.search || filters.showPastEvents
+    const handleSavedFilterPress = () => {
+        if (!user) {
+            Alert.alert(
+                'Login Required',
+                'Create an account or log in to save events and filter by your favorites.',
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Log In', onPress: () => router.push('/login') }
+                ]
+            )
+            return
+        }
+        setFilters(prev => ({ ...prev, showSavedOnly: !prev.showSavedOnly }))
+    }
+
+    const hasActiveFilters = filters.eventType || filters.search || filters.showPastEvents || filters.showSavedOnly
 
     const renderHeader = () => (
         <View>
@@ -110,10 +172,33 @@ export default function ViewListingScreen() {
                     <Text style={styles.statLabel}>Upcoming</Text>
                 </ThemedInfoCard>
             </View>
-            {/* Filter Button */}
+            
+            {/* Filter Buttons Row */}
             <View style={styles.filterContainer}>
+                {/* Saved Events Quick Filter */}
                 <TouchableOpacity
-                    style={[styles.filterButton, hasActiveFilters &&styles.filterVuttonActive]}
+                    style={[
+                        styles.savedFilterButton,
+                        filters.showSavedOnly && styles.savedFilterButtonActive
+                    ]}
+                    onPress={handleSavedFilterPress}
+                >
+                    <Ionicons
+                        name={filters.showSavedOnly ? "heart" : "heart-outline"}
+                        size={18}
+                        color={filters.showSavedOnly ? COLORS.buttonPrimaryText : COLORS.primary}
+                    />
+                    <Text style={[
+                        styles.savedFilterText,
+                        filters.showSavedOnly && styles.savedFilterTextActive
+                    ]}>
+                        Saved {user && savedCount > 0 ? `(${savedCount})` : ''}
+                    </Text>
+                </TouchableOpacity>
+
+                {/* Main Filter Button */}
+                <TouchableOpacity
+                    style={[styles.filterButton, hasActiveFilters && styles.filterButtonActive]}
                     onPress={() => setFilterModalVisible(true)}
                 >
                     <Ionicons
@@ -122,13 +207,14 @@ export default function ViewListingScreen() {
                         color={hasActiveFilters ? COLORS.buttonPrimaryText : COLORS.text}
                     />
                     <Text style={[
-                        styles.filterButtonText, hasActiveFilters && styles.filterButtonTextActive
+                        styles.filterButtonText, 
+                        hasActiveFilters && styles.filterButtonTextActive
                     ]}>
                         Filters
                     </Text>
 
                     {hasActiveFilters && (
-                        <View style={styles.filterBadgeText}>
+                        <View style={styles.filterBadge}>
                             <Text style={styles.filterBadgeText}>
                                 {Object.values(filters).filter(v => v && v !== '').length}
                             </Text>
@@ -149,8 +235,14 @@ export default function ViewListingScreen() {
             {/* Active Filters Display */}
             {hasActiveFilters && (
                 <View style={styles.activeFiltersContainer}>
+                    {filters.showSavedOnly && (
+                        <View style={[styles.activeFilter, styles.savedActiveFilter]}>
+                            <Ionicons name="heart" size={12} color={COLORS.buttonPrimaryText} />
+                            <Text style={styles.activeFilterText}>Saved Events</Text>
+                        </View>
+                    )}
                     {filters.eventType && (
-                        <View style={styles.activeFilters}>
+                        <View style={styles.activeFilter}>
                             <Text style={styles.activeFilterText}>
                                 {EVENT_TYPE_LABELS[filters.eventType]}
                             </Text>
@@ -168,126 +260,115 @@ export default function ViewListingScreen() {
         </View>
     )
 
-    if (loading && listings.length === 0) {
+    // Get empty state content based on filters
+    const getEmptyStateContent = () => {
+        if (filters.showSavedOnly) {
+            return {
+                icon: "heart-outline",
+                title: "No Saved Events",
+                subtitle: "Tap the heart icon on any event to save it here for quick access."
+            }
+        }
+        if (hasActiveFilters) {
+            return {
+                icon: "search-outline",
+                title: "No Events Found",
+                subtitle: "Try adjusting your filters to see more events."
+            }
+        }
+        return {
+            icon: "calendar-outline",
+            title: "No Events Yet",
+            subtitle: "Be the first to create an event in your area!"
+        }
+    }
+
+    const emptyState = getEmptyStateContent()
+
+    // Show loading only on initial load
+    if (authLoading || initialLoad) {
         return (
             <ThemedSafeArea centered>
-                <Text>Loading events...</Text>
+                <ActivityIndicator size="large" color={COLORS.primary} />
+                <Text style={styles.loadingText}>Loading events...</Text>
             </ThemedSafeArea>
         )
     }
-
-    return (
-        <View style={{ flex: 1, backgroundColor: COLORS.background }}>
-            <ThemedSafeArea scrollable={false} edges={['top']}>
-                <View style={styles.container}>
-                    <ThemedHeader
-                        title="All Events"
-                        subtitle="Discover Loacal Events"
-                    />
-                    <FlatList
-                        data={filteredListings}
-                        keyExtractor={(item) => item.$id}
-                        renderItem={({ item }) => (
-                            <ListCard
-                                listing={item}
-                                onPress={() => handleListingPress(item)}
-                                showAuthor={true}
-                                currentUser={user}
-                            />
-                        )}
-                        ListHeaderComponent={renderHeader}
-                        ListEmptyComponent={
-                            <EmptyState
-                                icon="calendar-outline"
-                                title={hasActiveFilters ? "No Events Found" : "No Events Yet"}
-                                subtitle={hasActiveFilters ? "Try adjusting your filters" : "Be the first to create an event!"}
-                            />
-                        }
-                        contentContainerStyle={styles.listContent}
-                        showsVerticalScrollIndicator={false}
-                        refreshing={refreshing}
-                        onRefresh={refreshList}
-                    />
-
-                    {/* Filter Modal */}
-                    <FilterModal
-                        visible={filterModalVisible}
-                        onClose={() => setFilterModalVisible(false)}
-                        filters={filters}
-                        setFilters={setFilters}
-                    />
-                </View>
-            </ThemedSafeArea>
-
-            {/* FAB outside ThemedSafeArea but inside the flex container */}
-            {user && (
-                <ThemedFAB
-                    icon="add"
-                    onPress={handleAddListing}
-                    style={{
-                        position: 'absolute',
-                        right: 20,
-                        bottom: 30,
-                    }}
-                />
-            )}
-        </View>
-    )
     
-    // return (
-    //     <ThemedSafeArea scrollable={false} edges={['top']}>
-    //         <View style={styles.container}>
-    //             <ThemedHeader
-    //                 title="All Events"
-    //                 subtitle="Discover Loacal Events"
-    //             />
-    //             <FlatList
-    //                 data={filteredListings}
-    //                 keyExtractor={(item) => item.$id}
-    //                 renderItem={({ item }) => (
-    //                     <ListCard
-    //                         listing={item}
-    //                         onPress={() => handleListingPress(item)}
-    //                         showAuthor={true}
-    //                         currentUser={user}
-    //                     />
-    //                 )}
-    //                 ListHeaderComponent={renderHeader}
-    //                 ListEmptyComponent={
-    //                     <EmptyState
-    //                         icon="calendar-outline"
-    //                         title={hasActiveFilters ? "No Events Found" : "No Events Yet"}
-    //                         subtitle={hasActiveFilters ? "Try adjusting your filters" : "Be the first to create an event!"}
-    //                     />
-    //                 }
-    //                 contentContainerStyle={styles.listContent}  // Fixed typo
-    //                 showsVerticalScrollIndicator={false}
-    //                 refreshing={refreshing}
-    //                 onRefresh={refreshList}
-    //             />
+    return (
+        <ThemedSafeArea scrollable={false} extraBottomPadding={0} edges={['top']}>
+            <View style={styles.container}>
+                <ThemedHeader
+                    title={filters.showSavedOnly ? "Saved Events" : "All Events"}
+                    subtitle={filters.showSavedOnly ? `${filteredListings.length} saved event${filteredListings.length !== 1 ? 's' : ''}` : "Discover Local Events"}
+                />
+                <FlatList
+                    data={filteredListings}
+                    extraData={user}
+                    keyExtractor={(item) => item.$id}
+                    renderItem={({ item }) => (
+                        <ListCard
+                            listing={item}
+                            onPress={() => handleListingPress(item)}
+                            showAuthor={true}
+                            currentUser={user}
+                        />
+                    )}
+                    ListHeaderComponent={renderHeader}
+                    ListEmptyComponent={
+                        <EmptyState
+                            icon={emptyState.icon}
+                            title={emptyState.title}
+                            subtitle={emptyState.subtitle}
+                        />
+                    }
+                    contentContainerStyle={styles.listContent}
+                    showsVerticalScrollIndicator={false}
+                    refreshing={refreshing}
+                    onRefresh={refreshList}
+                />
 
-    //             {user && (
-    //                 <ThemedFAB
-    //                     icon="add"
-    //                     onPress={handleAddListing}
-    //                     style={styles.fab}
-    //                 />
-    //             )}
+                {user && (
+                    <ThemedFAB
+                        icon="add"
+                        onPress={handleAddListing}
+                        style={styles.fab}
+                    />
+                )}
 
-    //             {/* Filter Modal */}
-    //             <FilterModal
-    //                 visible={filterModalVisible}
-    //                 onClose={() => setFilterModalVisible(false)}
-    //                 filters={filters}
-    //                 setFilters={setFilters}
-    //             />
-    //         </View>
-    //     </ThemedSafeArea>
-    // )
+                {/* Filter Modal */}
+                <FilterModal
+                    visible={filterModalVisible}
+                    onClose={() => setFilterModalVisible(false)}
+                    filters={filters}
+                    setFilters={setFilters}
+                    user={user}
+                />
+            </View>
+        </ThemedSafeArea>
+    )
 }
 
-// Filter Modal Conent
-const FilterModal = ({ visible, onClose, filters, setFilters }) => {
+// Filter Modal Content
+const FilterModal = ({ visible, onClose, filters, setFilters, user }) => {
+    const handleSavedToggle = () => {
+        if (!user) {
+            Alert.alert(
+                'Login Required',
+                'Create an account or log in to save events and filter by your favorites.',
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Log In', onPress: () => {
+                        onClose()
+                        router.push('/login')
+                    }}
+                ]
+            )
+            return
+        }
+        setFilters({ ...filters, showSavedOnly: !filters.showSavedOnly })
+    }
+
     return (
         <Modal
             visible={visible}
@@ -301,6 +382,7 @@ const FilterModal = ({ visible, onClose, filters, setFilters }) => {
             >
                 <View style={styles.modalContent}>
                     <Pressable onPress={() => {}}>
+                        {/* Header */}
                         <View style={styles.modalHeader}>
                             <Text style={styles.modalTitle}>Filter Events</Text>
                             <TouchableOpacity onPress={onClose}>
@@ -308,18 +390,41 @@ const FilterModal = ({ visible, onClose, filters, setFilters }) => {
                             </TouchableOpacity>
                         </View>
 
+                        {/* Saved Events Toggle */}
+                        <TouchableOpacity
+                            style={styles.toggleOption}
+                            onPress={handleSavedToggle}
+                        >
+                            <View style={styles.toggleLabelRow}>
+                                <Ionicons 
+                                    name={filters.showSavedOnly ? "heart" : "heart-outline"} 
+                                    size={20} 
+                                    color={COLORS.primary} 
+                                />
+                                <Text style={styles.toggleLabel}>Saved Events Only</Text>
+                            </View>
+                            <Ionicons
+                                name={filters.showSavedOnly ? "checkbox" : "square-outline"}
+                                size={24}
+                                color={COLORS.primary}
+                            />
+                        </TouchableOpacity>
+
                         {/* Event Type Filter */}
                         <View style={styles.filterSection}>
                             <Text style={styles.filterSectionTitle}>Event Type</Text>
                             <View style={styles.eventTypeGrid}>
                                 <TouchableOpacity
                                     style={[
-                                        styles.eventTypeButton, 
+                                        styles.eventTypeButton,
                                         !filters.eventType && styles.eventTypeButtonActive
                                     ]}
-                                    onPress={() => setFilters({ ...filters, eventType: null})}
+                                    onPress={() => setFilters({ ...filters, eventType: null })}
                                 >
-                                    <Text style={styles.eventTypeButtonText}>All</Text>
+                                    <Text style={[
+                                        styles.eventTypeButtonText,
+                                        !filters.eventType && styles.eventTypeButtonTextActive
+                                    ]}>All</Text>
                                 </TouchableOpacity>
                                 {Object.entries(EVENT_TYPE_LABELS).map(([key, label]) => (
                                     <TouchableOpacity
@@ -328,9 +433,12 @@ const FilterModal = ({ visible, onClose, filters, setFilters }) => {
                                             styles.eventTypeButton, 
                                             filters.eventType === key && styles.eventTypeButtonActive
                                         ]}
-                                        onPress={() => setFilters({ ...filters, eventType: key})}
+                                        onPress={() => setFilters({ ...filters, eventType: key })}
                                     >
-                                        <Text style={styles.eventTypeButtonText}>{label}</Text>
+                                        <Text style={[
+                                            styles.eventTypeButtonText,
+                                            filters.eventType === key && styles.eventTypeButtonTextActive
+                                        ]}>{label}</Text>
                                     </TouchableOpacity>
                                 ))}
                             </View>
@@ -372,6 +480,12 @@ const styles = StyleSheet.create({
     listContent: {
         paddingHorizontal: SPACING.lg,
         paddingBottom: 20,
+        flexGrow: 1,
+    },
+    loadingText: {
+        marginTop: SPACING.md,
+        fontSize: 16,
+        color: COLORS.textSecondary,
     },
     statsContainer: {
         flexDirection: 'row',
@@ -397,8 +511,30 @@ const styles = StyleSheet.create({
     filterContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: SPACING.md,
+        gap: SPACING.sm,
         marginBottom: SPACING.md,
+    },
+    savedFilterButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: SPACING.xs,
+        paddingHorizontal: SPACING.md,
+        paddingVertical: SPACING.sm,
+        backgroundColor: COLORS.surface,
+        borderRadius: 20,
+        borderWidth: 2,
+        borderColor: COLORS.primary,
+    },
+    savedFilterButtonActive: {
+        backgroundColor: COLORS.primary,
+    },
+    savedFilterText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: COLORS.primary,
+    },
+    savedFilterTextActive: {
+        color: COLORS.buttonPrimaryText,
     },
     filterButton: {
         flex: 1,
@@ -452,10 +588,16 @@ const styles = StyleSheet.create({
         marginBottom: SPACING.md,
     },
     activeFilter: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
         backgroundColor: COLORS.primary,
         paddingHorizontal: SPACING.md,
         paddingVertical: SPACING.xs,
         borderRadius: 16,
+    },
+    savedActiveFilter: {
+        backgroundColor: COLORS.primary,
     },
     activeFilterText: {
         fontSize: 12,
@@ -516,6 +658,9 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: COLORS.text,
     },
+    eventTypeButtonTextActive: {
+        color: COLORS.buttonPrimaryText,
+    },
     toggleOption: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -524,6 +669,11 @@ const styles = StyleSheet.create({
         backgroundColor: COLORS.surface,
         borderRadius: 12,
         marginBottom: SPACING.md,
+    },
+    toggleLabelRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: SPACING.sm,
     },
     toggleLabel: {
         fontSize: 16,
@@ -551,12 +701,11 @@ const styles = StyleSheet.create({
         backgroundColor: COLORS.primary,
         justifyContent: 'center',
         alignItems: 'center',
-        // Add both for cross-platform compatibility
-        elevation: 8,        // Android
-        shadowColor: '#000', // iOS
+        elevation: 8,
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
-        zIndex: 999,        // Both platforms
+        zIndex: 999,
     }
 })

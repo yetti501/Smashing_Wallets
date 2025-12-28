@@ -8,20 +8,20 @@ import {
     Alert,
     Text,
     Switch,
-    ActivityIndicator ,
-    Platform, 
-    Image
+    ActivityIndicator,
+    Platform
 } from 'react-native'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import DateTimePicker from '@react-native-community/datetimepicker'
 
 import ThemedSafeArea from '../../components/ThemedSafeArea'
-import ThemedInfoCard from '../../components/ThemedInfoCard'
+import ImagePickerGrid from '../../components/ImagePickerGrid'
 import { useListings } from '../../contexts/ListingsContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { COLORS, SPACING, RADIUS } from '../../constants/Colors'
 import { EVENT_TYPES, EVENT_TYPE_LABELS } from '../../lib/appwrite'
+import { imageService } from '../../lib/imageService'
 
 export default function EditListingScreen() {
     const { listingId } = useLocalSearchParams()
@@ -34,11 +34,18 @@ export default function EditListingScreen() {
     const [datePickerValue, setDatePickerValue] = useState(new Date())
     const [showStartTimePicker, setShowStartTimePicker] = useState(false)
     const [showEndTimePicker, setShowEndTimePicker] = useState(false)
-    const [timePickerValue, setTimePickerValue] = useState(false)
+    const [timePickerValue, setTimePickerValue] = useState(new Date())
 
     const [loading, setLoading] = useState(true)
     const [submitting, setSubmitting] = useState(false)
+    const [uploadingImages, setUploadingImages] = useState(false)
     const [originalListing, setOriginalListing] = useState(null)
+
+    // Image state
+    // Each image: { uri: string, isExisting: boolean, fileId?: string }
+    const [selectedImages, setSelectedImages] = useState([])
+    // Track images to delete (existing images that were removed)
+    const [imagesToDelete, setImagesToDelete] = useState([])
 
     // Form state
     const [formData, setFormData] = useState({
@@ -55,6 +62,8 @@ export default function EditListingScreen() {
         price: '',
         contactPhone: '',
         contactEmail: '',
+        showPhone: true,
+        showEmail: true,
         tags: [],
         featured: false,
         multiday: false,
@@ -97,12 +106,37 @@ export default function EditListingScreen() {
                 price: data.price || '',
                 contactPhone: data.contactPhone || '',
                 contactEmail: data.contactEmail || '',
+                showPhone: data.showPhone !== undefined ? data.showPhone : true,
+                showEmail: data.showEmail !== undefined ? data.showEmail : true,
                 tags: data.tags || [],
                 featured: data.featured || false,
                 multiday: data.multiday || false,
                 isRecurring: data.isRecurring || false,
                 status: data.status || 'active',
             })
+
+            // Load existing images
+            const existingImages = []
+            if (data.images && data.images.length > 0) {
+                data.images.forEach(url => {
+                    const fileId = imageService.extractFileIdFromUrl(url)
+                    existingImages.push({
+                        uri: url,
+                        isExisting: true,
+                        fileId: fileId,
+                    })
+                })
+            } else if (data.image) {
+                // Handle old single image field
+                const fileId = imageService.extractFileIdFromUrl(data.image)
+                existingImages.push({
+                    uri: data.image,
+                    isExisting: true,
+                    fileId: fileId,
+                })
+            }
+            setSelectedImages(existingImages)
+
         } catch (error) {
             Alert.alert('Error', 'Failed to load event details')
             console.error('Error loading listing:', error)
@@ -114,6 +148,24 @@ export default function EditListingScreen() {
 
     const handleInputChange = (field, value) => {
         setFormData(prev => ({ ...prev, [field]: value }))
+    }
+
+    // Handle image changes from ImagePickerGrid
+    const handleImagesChange = (newImages) => {
+        // Check if any existing images were removed
+        const removedImages = selectedImages.filter(
+            oldImg => oldImg.isExisting && !newImages.find(newImg => newImg.uri === oldImg.uri)
+        )
+        
+        // Add removed images to delete list
+        if (removedImages.length > 0) {
+            setImagesToDelete(prev => [
+                ...prev,
+                ...removedImages.filter(img => img.fileId)
+            ])
+        }
+        
+        setSelectedImages(newImages)
     }
 
     const handleAddTag = () => {
@@ -145,17 +197,13 @@ export default function EditListingScreen() {
     const formatDateDisplay = (dateString) => {
         if(!dateString) return ''
         
-        // Handle both 'YYYY-MM-DD' and full ISO timestamps
         let date
         if (dateString.includes('T')) {
-            // Already has timestamp
             date = new Date(dateString)
         } else {
-            // Just a date string, add time
             date = new Date(dateString + 'T00:00:00')
         }
         
-        // Check if date is valid
         if (isNaN(date.getTime())) {
             console.error('Invalid date:', dateString)
             return 'Invalid Date'
@@ -168,27 +216,21 @@ export default function EditListingScreen() {
         })
     }
 
-    // Format phone number as user types
     const formatPhoneNumber = (text) => {
-        // Remove all non-digit characters
         const cleaned = text.replace(/\D/g, '')
-
-        // Limit to 10 digits
         const limited = cleaned.substring(0, 10)
 
-        // Format as (###) ###-####
-        if(limited.length === 0 ) {
+        if(limited.length === 0) {
             return ''
         } else if(limited.length <= 3) {
             return `(${limited})`
-        } else if(limited.length <=6) {
+        } else if(limited.length <= 6) {
             return `(${limited.slice(0, 3)}) ${limited.slice(3)}`
         } else {
             return `(${limited.slice(0, 3)}) ${limited.slice(3, 6)}-${limited.slice(6)}`
         }
     }
 
-    // Handle date picker for single-day events
     const handleDateChange = (event, selectedDate) => {
         if(Platform.OS === 'android') {
             setShowDatePicker(false)
@@ -204,7 +246,6 @@ export default function EditListingScreen() {
         }
     }
 
-    // Handle start date picker for multi-day events
     const handleStartDateChange = (event, selectedDate) => {
         if(Platform.OS === 'android') {
             setShowStartDatePicker(false)
@@ -219,7 +260,6 @@ export default function EditListingScreen() {
         }
     }
 
-    // Handle end date picker for multi-day events
     const handleEndDateChange = (event, selectedDate) => {
         if(Platform.OS === 'android') {
             setShowEndDatePicker(false)
@@ -235,7 +275,6 @@ export default function EditListingScreen() {
         }
     }
 
-    // Open date picker with current date or today
     const openDatePicker = (pickerType) => {
         let initialDate = new Date()
 
@@ -258,21 +297,19 @@ export default function EditListingScreen() {
         }
     }
 
-    // Format time to 12-hour format (e.g., "9:00 AM")
     const formatTime = (date) => {
         let hours = date.getHours()
         const minutes = date.getMinutes()
         const ampm = hours >= 12 ? 'PM' : 'AM'
 
         hours = hours % 12
-        hours = hours ? hours : 12 // 0 should be 12
+        hours = hours ? hours : 12
 
         const minutesStr = minutes < 10 ? '0' + minutes : minutes
 
         return `${hours}:${minutesStr} ${ampm}`
     }
 
-    // Parse time string to Date object
     const parseTimeToDate = (timeString) => {
         if(!timeString) return new Date()
 
@@ -298,10 +335,8 @@ export default function EditListingScreen() {
         }
 
         return date
-
     }
 
-    // Handle start time change
     const handleStartTimeChange = (event, selectedTime) => {
         if (Platform.OS === 'android') {
             setShowStartTimePicker(false)
@@ -356,8 +391,6 @@ export default function EditListingScreen() {
         }
     }
 
-    // Then need to add to add updates to the UI. 
-
     const validateForm = () => {
         if (!formData.title.trim()) {
             Alert.alert('Validation Error', 'Please enter an event title')
@@ -372,7 +405,6 @@ export default function EditListingScreen() {
             return false
         }
 
-        // Validate dates
         if (formData.multiday) {
             if (!formData.startDate || !formData.endDate) {
                 Alert.alert('Validation Error', 'Please enter both start and end dates for multi-day events')
@@ -396,8 +428,81 @@ export default function EditListingScreen() {
         if (!validateForm()) return
 
         setSubmitting(true)
+        
         try {
-            // Prepare update data (only changed fields)
+            let finalImageUrls = []
+            
+            // Separate existing and new images
+            const existingImages = selectedImages.filter(img => img.isExisting)
+            const newImages = selectedImages.filter(img => !img.isExisting)
+            
+            // Keep existing image URLs
+            finalImageUrls = existingImages.map(img => img.uri)
+            
+            // Upload new images if any
+            if (newImages.length > 0) {
+                setUploadingImages(true)
+                
+                try {
+                    const imageUris = newImages.map(img => img.uri)
+                    const uploadResult = await imageService.uploadMultipleImages(
+                        imageUris,
+                        (current, total) => {
+                            console.log(`Uploading image ${current} of ${total}`)
+                        }
+                    )
+                    finalImageUrls = [...finalImageUrls, ...uploadResult.urls]
+                } catch (uploadError) {
+                    console.error('Error uploading images:', uploadError)
+                    Alert.alert(
+                        'Image Upload Failed',
+                        'Failed to upload new images. Would you like to continue without the new images?',
+                        [
+                            { 
+                                text: 'Cancel', 
+                                style: 'cancel',
+                                onPress: () => {
+                                    setSubmitting(false)
+                                    setUploadingImages(false)
+                                }
+                            },
+                            { 
+                                text: 'Continue', 
+                                onPress: () => finishUpdate(existingImages.map(img => img.uri))
+                            }
+                        ]
+                    )
+                    return
+                } finally {
+                    setUploadingImages(false)
+                }
+            }
+            
+            // Delete removed images from storage
+            if (imagesToDelete.length > 0) {
+                try {
+                    const fileIds = imagesToDelete.map(img => img.fileId).filter(Boolean)
+                    if (fileIds.length > 0) {
+                        await imageService.deleteMultipleImages(fileIds)
+                        console.log('Deleted old images:', fileIds)
+                    }
+                } catch (deleteError) {
+                    // Log but don't fail the update
+                    console.error('Error deleting old images:', deleteError)
+                }
+            }
+            
+            await finishUpdate(finalImageUrls)
+        } catch (error) {
+            Alert.alert('Error', error.message || 'Failed to update event')
+            console.error('Error updating listing:', error)
+            setSubmitting(false)
+        }
+    }
+
+    const finishUpdate = async (imageUrls) => {
+        try {
+            // Prepare update data
             const updates = {}
             
             Object.keys(formData).forEach(key => {
@@ -405,6 +510,14 @@ export default function EditListingScreen() {
                     updates[key] = formData[key]
                 }
             })
+
+            // Always update images if they've changed
+            const originalImages = originalListing.images || (originalListing.image ? [originalListing.image] : [])
+            const imagesChanged = JSON.stringify(imageUrls.sort()) !== JSON.stringify(originalImages.sort())
+            
+            if (imagesChanged) {
+                updates.images = imageUrls
+            }
 
             // If no changes, just go back
             if (Object.keys(updates).length === 0) {
@@ -454,7 +567,7 @@ export default function EditListingScreen() {
     }
 
     return (
-        <ThemedSafeArea scrollable={false}>
+        <ThemedSafeArea scrollable={false} extraBottomPadding={0} edges={['top']}>
             <View style={styles.container}>
                 {/* Header */}
                 <View style={styles.header}>
@@ -530,6 +643,23 @@ export default function EditListingScreen() {
                         />
                     </View>
 
+                    {/* Images Section */}
+                    <View style={styles.section}>
+                        <Text style={styles.label}>Photos</Text>
+                        <Text style={styles.helperText}>
+                            Add up to 5 photos to showcase your event
+                        </Text>
+                        <View style={{ marginTop: SPACING.sm }}>
+                            <ImagePickerGrid
+                                images={selectedImages}
+                                onImagesChange={handleImagesChange}
+                                maxImages={5}
+                                disabled={submitting}
+                                uploading={uploadingImages}
+                            />
+                        </View>
+                    </View>
+
                     {/* Multi-day Toggle */}
                     <View style={styles.section}>
                         <View style={styles.toggleRow}>
@@ -547,53 +677,6 @@ export default function EditListingScreen() {
                             />
                         </View>
                     </View>
-
-                    {/* Date Fields */}
-                    {/* {formData.multiday ? (
-                        <>
-                            <View style={styles.section}>
-                                <Text style={styles.label}>Start Date *</Text>
-                                <TextInput
-                                    style={styles.input}
-                                    placeholder="YYYY-MM-DD"
-                                    placeholderTextColor={COLORS.textTertiary}
-                                    value={formData.startDate}
-                                    onChangeText={(text) => handleInputChange('startDate', text)}
-                                />
-                                <Text style={styles.helperText}>
-                                    Format: 2025-12-25
-                                </Text>
-                            </View>
-
-                            <View style={styles.section}>
-                                <Text style={styles.label}>End Date *</Text>
-                                <TextInput
-                                    style={styles.input}
-                                    placeholder="YYYY-MM-DD"
-                                    placeholderTextColor={COLORS.textTertiary}
-                                    value={formData.endDate}
-                                    onChangeText={(text) => handleInputChange('endDate', text)}
-                                />
-                            </View>
-                        </>
-                    ) : (
-                        <View style={styles.section}>
-                            <Text style={styles.label}>Event Date *</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="YYYY-MM-DD"
-                                placeholderTextColor={COLORS.textTertiary}
-                                value={formData.date || formData.startDate}
-                                onChangeText={(text) => {
-                                    handleInputChange('date', text)
-                                    handleInputChange('startDate', text)
-                                }}
-                            />
-                            <Text style={styles.helperText}>
-                                Format: 2025-12-25
-                            </Text>
-                        </View>
-                    )} */}
 
                     {/* Date Fields with Native Picker */}
                     {formData.multiday ? (
@@ -690,33 +773,6 @@ export default function EditListingScreen() {
                         />
                     )}
 
-                    {/* Time Fields */}
-                    {/* <View style={styles.row}>
-                        <View style={[styles.section, styles.halfWidth]}>
-                            <Text style={styles.label}>Start Time</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="9:00 AM"
-                                placeholderTextColor={COLORS.textTertiary}
-                                value={formData.startTime}
-                                onChangeText={(text) => handleInputChange('startTime', text)}
-                                maxLength={50}
-                            />
-                        </View>
-
-                        <View style={[styles.section, styles.halfWidth]}>
-                            <Text style={styles.label}>End Time</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="4:00 PM"
-                                placeholderTextColor={COLORS.textTertiary}
-                                value={formData.endTime}
-                                onChangeText={(text) => handleInputChange('endTime', text)}
-                                maxLength={50}
-                            />
-                        </View>
-                    </View> */}
-
                     {/* Time Pickers */}
                     {showStartTimePicker && (
                         <DateTimePicker
@@ -810,39 +866,94 @@ export default function EditListingScreen() {
                     </View>
 
                     {/* Contact Information */}
-                    <ThemedInfoCard style={styles.section}>
+                    <View style={styles.section}>
                         <Text style={styles.sectionTitle}>Contact Information</Text>
-                        
-                        <View style={styles.subsection}>
-                            <Text style={styles.label}>Phone Number</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="(555) 123-4567"
-                                placeholderTextColor={COLORS.textTertiary}
-                                value={formData.contactPhone}
-                                onChangeText={(text) => {
-                                    const formatted = formatPhoneNumber(text)
-                                    handleInputChange('contactPhone', formatted)}
-                                }
-                                keyboardType="phone-pad"
-                                maxLength={20}
-                            />
+                        <Text style={styles.contactHelperText}>
+                            Add contact details for interested buyers. Toggle visibility for each.
+                        </Text>
+
+                        <View style={styles.contactField}>
+                            <View style={styles.contactInputRow}>
+                                <View style={styles.contactInputWrapper}>
+                                    <Text style={styles.label}>Phone Number</Text>
+                                    <TextInput
+                                        style={[
+                                            styles.input,
+                                            !formData.showPhone && styles.inputDisabled
+                                        ]}
+                                        placeholder="(555) 123-4567"
+                                        placeholderTextColor={COLORS.textTertiary}
+                                        value={formData.contactPhone}
+                                        onChangeText={(text) => {
+                                            const formatted = formatPhoneNumber(text)
+                                            handleInputChange('contactPhone', formatted)}
+                                        }
+                                        keyboardType="phone-pad"
+                                        maxLength={20}
+                                    />
+                                </View>
+                            </View>
+                            <View style={styles.visibilityToggle}>
+                                <Ionicons 
+                                    name={formData.showPhone ? "eye" : "eye-off"} 
+                                    size={18} 
+                                    color={formData.showPhone ? COLORS.primary : COLORS.textTertiary} 
+                                />
+                                <Text style={[
+                                    styles.visibilityText,
+                                    formData.showPhone && styles.visibilityTextActive
+                                ]}>
+                                    {formData.showPhone ? 'Visible on listing' : 'Hidden from listing'}
+                                </Text>
+                                <Switch
+                                    value={formData.showPhone}
+                                    onValueChange={(value) => handleInputChange('showPhone', value)}
+                                    trackColor={{ false: COLORS.border, true: COLORS.primaryLight }}
+                                    thumbColor={formData.showPhone ? COLORS.primary : COLORS.textTertiary}
+                                />
+                            </View>
                         </View>
 
-                        <View style={styles.subsection}>
-                            <Text style={styles.label}>Email</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="email@example.com"
-                                placeholderTextColor={COLORS.textTertiary}
-                                value={formData.contactEmail}
-                                onChangeText={(text) => handleInputChange('contactEmail', text)}
-                                keyboardType="email-address"
-                                autoCapitalize="none"
-                                maxLength={255}
-                            />
+                        <View style={styles.contactField}>
+                            <View style={styles.contactInputRow}>
+                                <View style={styles.contactInputWrapper}>
+                                    <Text style={styles.label}>Email</Text>
+                                    <TextInput
+                                        style={[
+                                            styles.input,
+                                            !formData.showEmail && styles.inputDisabled
+                                        ]}
+                                        placeholder="email@example.com"
+                                        placeholderTextColor={COLORS.textTertiary}
+                                        value={formData.contactEmail}
+                                        onChangeText={(text) => handleInputChange('contactEmail', text)}
+                                        keyboardType="email-address"
+                                        autoCapitalize="none"
+                                        maxLength={255}
+                                    />
+                                </View>
+                            </View>
+                            <View style={styles.visibilityToggle}>
+                                <Ionicons 
+                                    name={formData.showEmail ? "eye" : "eye-off"} 
+                                    size={18} 
+                                    color={formData.showEmail ? COLORS.primary : COLORS.textTertiary} 
+                                />
+                                <Text style={[
+                                    styles.visibilityText,
+                                    formData.showEmail && styles.visibilityTextActive
+                                ]}>
+                                    {formData.showEmail ? 'Visible on listing' : 'Hidden from listing'}
+                                </Text>
+                                <Switch
+                                    value={formData.showEmail}
+                                    onValueChange={(value) => handleInputChange('showEmail', value)}
+                                    trackColor={{ false: COLORS.border, true: COLORS.primaryLight }}
+                                    thumbColor={formData.showEmail ? COLORS.primary : COLORS.textTertiary}
+                                />
+                            </View>
                         </View>
-                    </ThemedInfoCard>
+                    </View>
 
                     {/* Tags */}
                     <View style={styles.section}>
@@ -882,50 +993,23 @@ export default function EditListingScreen() {
                         )}
                     </View>
 
-                    {/* Additional Options */}
-                    {/* <ThemedInfoCard style={styles.section}>
-                        <Text style={styles.sectionTitle}>Additional Options</Text>
-
-                        <View style={styles.toggleRow}>
-                            <View>
-                                <Text style={styles.label}>Featured Event</Text>
-                                <Text style={styles.helperText}>
-                                    Highlight this event
-                                </Text>
-                            </View>
-                            <Switch
-                                value={formData.featured}
-                                onValueChange={(value) => handleInputChange('featured', value)}
-                                trackColor={{ false: COLORS.border, true: COLORS.primary }}
-                                thumbColor={COLORS.buttonPrimaryText}
-                            />
-                        </View>
-
-                        <View style={styles.toggleRow}>
-                            <View>
-                                <Text style={styles.label}>Recurring Event</Text>
-                                <Text style={styles.helperText}>
-                                    This event repeats regularly
-                                </Text>
-                            </View>
-                            <Switch
-                                value={formData.isRecurring}
-                                onValueChange={(value) => handleInputChange('isRecurring', value)}
-                                trackColor={{ false: COLORS.border, true: COLORS.primary }}
-                                thumbColor={COLORS.buttonPrimaryText}
-                            />
-                        </View>
-                    </ThemedInfoCard> */}
-
                     {/* Submit Buttons */}
                     <View style={styles.submitContainer}>
                         <TouchableOpacity
-                            style={styles.submitButton}
+                            style={[
+                                styles.submitButton,
+                                submitting && styles.submitButtonDisabled
+                            ]}
                             onPress={handleSubmit}
                             disabled={submitting}
                         >
                             {submitting ? (
-                                <ActivityIndicator size="small" color={COLORS.buttonPrimaryText} />
+                                <View style={styles.submittingContainer}>
+                                    <ActivityIndicator size="small" color={COLORS.buttonPrimaryText} />
+                                    <Text style={styles.submitButtonText}>
+                                        {uploadingImages ? 'Uploading Images...' : 'Saving Changes...'}
+                                    </Text>
+                                </View>
                             ) : (
                                 <Text style={styles.submitButtonText}>
                                     Update Event
@@ -977,9 +1061,6 @@ const styles = StyleSheet.create({
     },
     section: {
         marginBottom: SPACING.lg,
-    },
-    subsection: {
-        marginBottom: SPACING.md,
     },
     sectionTitle: {
         fontSize: 18,
@@ -1094,10 +1175,18 @@ const styles = StyleSheet.create({
         borderRadius: RADIUS.md,
         alignItems: 'center',
     },
+    submitButtonDisabled: {
+        opacity: 0.7,
+    },
     submitButtonText: {
         fontSize: 16,
         fontWeight: '600',
         color: COLORS.buttonPrimaryText,
+    },
+    submittingContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: SPACING.sm,
     },
     cancelButton: {
         backgroundColor: COLORS.surface,
@@ -1118,39 +1207,80 @@ const styles = StyleSheet.create({
         color: COLORS.textSecondary,
     },
     dateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
-    padding: SPACING.md,
-},
-dateButtonText: {
-    fontSize: 16,
-    color: COLORS.textTertiary,
-},
-dateButtonTextSelected: {
-    color: COLORS.text,
-    fontWeight: '500',
-},
-timeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
-    padding: SPACING.md,
-},
-timeButtonText: {
-    fontSize: 16,
-    color: COLORS.textTertiary,
-},
-timeButtonTextSelected: {
-    color: COLORS.text,
-    fontWeight: '500',
-},
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: SPACING.md,
+        backgroundColor: COLORS.surface,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        borderRadius: RADIUS.md,
+        padding: SPACING.md,
+    },
+    dateButtonText: {
+        fontSize: 16,
+        color: COLORS.textTertiary,
+    },
+    dateButtonTextSelected: {
+        color: COLORS.text,
+        fontWeight: '500',
+    },
+    timeButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: SPACING.sm,
+        backgroundColor: COLORS.surface,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        borderRadius: RADIUS.md,
+        padding: SPACING.md,
+    },
+    timeButtonText: {
+        fontSize: 16,
+        color: COLORS.textTertiary,
+    },
+    timeButtonTextSelected: {
+        color: COLORS.text,
+        fontWeight: '500',
+    },
+    contactHelperText: {
+        fontSize: 13,
+        color: COLORS.textSecondary,
+        marginBottom: SPACING.md,
+    },
+    contactField: {
+        marginBottom: SPACING.md,
+        backgroundColor: COLORS.surface,
+        borderRadius: RADIUS.md,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        overflow: 'hidden',
+    },
+    contactInputRow: {
+        padding: SPACING.md,
+    },
+    contactInputWrapper: {
+        flex: 1,
+    },
+    visibilityToggle: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: SPACING.sm,
+        paddingHorizontal: SPACING.md,
+        paddingVertical: SPACING.sm,
+        backgroundColor: COLORS.surfaceSecondary,
+        borderTopWidth: 1,
+        borderTopColor: COLORS.border,
+    },
+    visibilityText: {
+        flex: 1,
+        fontSize: 13,
+        color: COLORS.textTertiary,
+    },
+    visibilityTextActive: {
+        color: COLORS.primary,
+        fontWeight: '500',
+    },
+    inputDisabled: {
+        opacity: 0.5,
+    },
 })

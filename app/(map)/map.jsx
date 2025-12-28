@@ -17,10 +17,53 @@ import { Ionicons } from '@expo/vector-icons'
 import * as Location from 'expo-location'
 
 import { useListings } from '../../contexts/ListingsContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { COLORS, SPACING, RADIUS, SHADOWS } from '../../constants/Colors'
 import { EVENT_TYPES, EVENT_TYPE_LABELS, EVENT_TYPE_ICONS } from '../../lib/appwrite'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
+
+// Custom map style to hide default POIs
+const CUSTOM_MAP_STYLE = [
+    {
+        "featureType": "poi",
+        "elementType": "labels",
+        "stylers": [{ "visibility": "off" }]
+    },
+    {
+        "featureType": "poi.business",
+        "stylers": [{ "visibility": "off" }]
+    },
+    {
+        "featureType": "poi.attraction",
+        "stylers": [{ "visibility": "off" }]
+    },
+    {
+        "featureType": "poi.government",
+        "stylers": [{ "visibility": "off" }]
+    },
+    {
+        "featureType": "poi.medical",
+        "stylers": [{ "visibility": "off" }]
+    },
+    {
+        "featureType": "poi.place_of_worship",
+        "stylers": [{ "visibility": "off" }]
+    },
+    {
+        "featureType": "poi.school",
+        "stylers": [{ "visibility": "off" }]
+    },
+    {
+        "featureType": "poi.sports_complex",
+        "stylers": [{ "visibility": "off" }]
+    },
+    {
+        "featureType": "transit",
+        "elementType": "labels.icon",
+        "stylers": [{ "visibility": "off" }]
+    }
+]
 
 // Color mapping for event types
 const EVENT_TYPE_COLORS = {
@@ -36,18 +79,72 @@ const EVENT_TYPE_COLORS = {
     [EVENT_TYPES.OTHER]: '#6B7280',          // Gray
 }
 
+// Minimum distance (in km) to move before showing "Search this area" button
+const MIN_MOVE_DISTANCE = 1 // 1km
+
 export default function MapScreen() {
     const { listings } = useListings()
-    const [location, setLocation] = useState(null)
+    const { user } = useAuth()
+    const [userLocation, setUserLocation] = useState(null) // User's actual GPS location
+    const [searchCenter, setSearchCenter] = useState(null) // Center point for filtering events
+    const [currentMapRegion, setCurrentMapRegion] = useState(null) // Current visible map region
     const [loading, setLoading] = useState(true)
-    const [searchRadius, setSearchRadius] = useState(10) // km
+    const [searchRadius, setSearchRadius] = useState(10) // in miles by default
     const [selectedEvent, setSelectedEvent] = useState(null)
     const [filterModalVisible, setFilterModalVisible] = useState(false)
     const [selectedEventType, setSelectedEventType] = useState(null)
     const [showPastEvents, setShowPastEvents] = useState(false)
+    const [showSearchButton, setShowSearchButton] = useState(false)
     
     const mapRef = useRef(null)
     const cardAnimation = useRef(new Animated.Value(0)).current
+    const searchButtonAnimation = useRef(new Animated.Value(0)).current
+    const [clusterModalVisible, setClusterModalVisible] = useState(false)
+    const [clusterEvents, setClusterEvents] = useState([])
+
+    // Get user's distance unit preference (default to miles)
+    const distanceUnit = user?.prefs?.distanceUnit || 'miles'
+    
+    // Convert between miles and km
+    const milesToKm = (miles) => miles * 1.60934
+    const kmToMiles = (km) => km / 1.60934
+    
+    // Get radius in km for calculations (internal always uses km)
+    const getRadiusInKm = () => {
+        return distanceUnit === 'miles' ? milesToKm(searchRadius) : searchRadius
+    }
+    
+    // Format distance for display based on user preference
+    const formatDistance = (distanceInKm) => {
+        if (distanceUnit === 'miles') {
+            const miles = kmToMiles(distanceInKm)
+            if (miles < 0.1) {
+                return `${Math.round(miles * 5280)} ft away`
+            }
+            return `${miles.toFixed(1)} mi away`
+        } else {
+            if (distanceInKm < 1) {
+                return `${Math.round(distanceInKm * 1000)}m away`
+            }
+            return `${distanceInKm.toFixed(1)} km away`
+        }
+    }
+    
+    // Get unit label
+    const getUnitLabel = () => distanceUnit === 'miles' ? 'mi' : 'km'
+
+    // Calculate distance between two points
+    const calculateDistance = (lat1, lon1, lat2, lon2) => {
+        const R = 6371 // Earth's radius in km
+        const dLat = (lat2 - lat1) * Math.PI / 180
+        const dLon = (lon2 - lon1) * Math.PI / 180
+        const a = 
+            Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2)
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+        return R * c
+    }
 
     // Get user location
     useEffect(() => {
@@ -55,14 +152,17 @@ export default function MapScreen() {
             try {
                 let { status } = await Location.requestForegroundPermissionsAsync()
                 
+                const defaultLocation = {
+                    latitude: 33.4484,
+                    longitude: -112.0740,
+                    latitudeDelta: 0.15,
+                    longitudeDelta: 0.15,
+                }
+                
                 if (status !== 'granted') {
-                    // Default to Phoenix if no permission
-                    setLocation({
-                        latitude: 33.4484,
-                        longitude: -112.0740,
-                        latitudeDelta: 0.15,
-                        longitudeDelta: 0.15,
-                    })
+                    setUserLocation(defaultLocation)
+                    setSearchCenter(defaultLocation)
+                    setCurrentMapRegion(defaultLocation)
                     setLoading(false)
                     return
                 }
@@ -71,22 +171,28 @@ export default function MapScreen() {
                     accuracy: Location.Accuracy.Balanced,
                 })
                 
-                setLocation({
+                const locationData = {
                     latitude: currentLocation.coords.latitude,
                     longitude: currentLocation.coords.longitude,
                     latitudeDelta: 0.15,
                     longitudeDelta: 0.15,
-                })
+                }
+                
+                setUserLocation(locationData)
+                setSearchCenter(locationData)
+                setCurrentMapRegion(locationData)
                 setLoading(false)
             } catch (error) {
                 console.error('Location error:', error)
-                // Default location on error
-                setLocation({
+                const defaultLocation = {
                     latitude: 33.4484,
                     longitude: -112.0740,
                     latitudeDelta: 0.15,
                     longitudeDelta: 0.15,
-                })
+                }
+                setUserLocation(defaultLocation)
+                setSearchCenter(defaultLocation)
+                setCurrentMapRegion(defaultLocation)
                 setLoading(false)
             }
         })()
@@ -102,35 +208,75 @@ export default function MapScreen() {
         }).start()
     }, [selectedEvent])
 
-    // Calculate distance between two points
-    const calculateDistance = (lat1, lon1, lat2, lon2) => {
-        const R = 6371 // Earth's radius in km
-        const dLat = (lat2 - lat1) * Math.PI / 180
-        const dLon = (lon2 - lon1) * Math.PI / 180
-        const a = 
-            Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon/2) * Math.sin(dLon/2)
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
-        return R * c
+    // Animate search button in/out
+    useEffect(() => {
+        Animated.spring(searchButtonAnimation, {
+            toValue: showSearchButton ? 1 : 0,
+            useNativeDriver: true,
+            tension: 80,
+            friction: 10,
+        }).start()
+    }, [showSearchButton])
+
+    // Handle region change complete - check if we should show search button
+    const handleRegionChangeComplete = (region) => {
+        setCurrentMapRegion(region)
+        
+        if (!searchCenter) return
+        
+        // Calculate distance from search center to new map center
+        const distanceMoved = calculateDistance(
+            searchCenter.latitude,
+            searchCenter.longitude,
+            region.latitude,
+            region.longitude
+        )
+        
+        // Show button if moved more than threshold
+        if (distanceMoved > MIN_MOVE_DISTANCE) {
+            setShowSearchButton(true)
+        } else {
+            setShowSearchButton(false)
+        }
     }
 
-    // Filter events
+    // Handle "Search this area" button press
+    const handleSearchThisArea = () => {
+        if (!currentMapRegion) return
+        
+        // Update search center to current map center
+        setSearchCenter({
+            latitude: currentMapRegion.latitude,
+            longitude: currentMapRegion.longitude,
+            latitudeDelta: currentMapRegion.latitudeDelta,
+            longitudeDelta: currentMapRegion.longitudeDelta,
+        })
+        
+        // Hide the button
+        setShowSearchButton(false)
+        
+        // Deselect any selected event
+        setSelectedEvent(null)
+    }
+
+    // Filter events based on search center
     const filteredEvents = useMemo(() => {
-        if (!location) return []
+        if (!searchCenter) return []
+        
+        const radiusInKm = getRadiusInKm()
         
         let filtered = listings.filter(event => {
             // Must have coordinates
             if (!event.latitude || !event.longitude) return false
             
-            // Filter by distance
+            // Filter by distance from SEARCH CENTER (not user location)
             const distance = calculateDistance(
-                location.latitude,
-                location.longitude,
+                searchCenter.latitude,
+                searchCenter.longitude,
                 event.latitude,
                 event.longitude
             )
-            if (distance > searchRadius) return false
+            if (distance > radiusInKm) return false
             
             // Filter by event type
             if (selectedEventType && event.eventType !== selectedEventType) return false
@@ -146,13 +292,75 @@ export default function MapScreen() {
         })
         
         return filtered
-    }, [listings, location, searchRadius, selectedEventType, showPastEvents])
+    }, [listings, searchCenter, searchRadius, selectedEventType, showPastEvents, distanceUnit])
+
+    // Cluster nearby events (within ~50 meters of each other)
+    const clusteredEvents = useMemo(() => {
+        const CLUSTER_DISTANCE = 0.05 // ~50 meters in km
+        const clusters = []
+        const processed = new Set()
+        
+        filteredEvents.forEach((event, index) => {
+            if (processed.has(event.$id)) return
+            
+            // Find all events near this one
+            const nearbyEvents = filteredEvents.filter((otherEvent, otherIndex) => {
+                if (processed.has(otherEvent.$id)) return false
+                if (event.$id === otherEvent.$id) return true
+                
+                const distance = calculateDistance(
+                    event.latitude,
+                    event.longitude,
+                    otherEvent.latitude,
+                    otherEvent.longitude
+                )
+                return distance < CLUSTER_DISTANCE
+            })
+            
+            // Mark all as processed
+            nearbyEvents.forEach(e => processed.add(e.$id))
+            
+            // Create cluster
+            clusters.push({
+                id: event.$id,
+                latitude: event.latitude,
+                longitude: event.longitude,
+                events: nearbyEvents,
+                count: nearbyEvents.length,
+                eventType: event.eventType
+            })
+        })
+        
+        return clusters
+    }, [filteredEvents])
 
     // Handle marker press
-    const handleMarkerPress = (event) => {
+    const handleMarkerPress = (cluster) => {
+        if (cluster.count > 1) {
+            // Multiple events - show cluster modal
+            setClusterEvents(cluster.events)
+            setClusterModalVisible(true)
+        } else {
+            // Single event - show preview card
+            setSelectedEvent(cluster.events[0])
+            
+            // Center map on selected marker
+            if (mapRef.current) {
+                mapRef.current.animateToRegion({
+                    latitude: cluster.latitude,
+                    longitude: cluster.longitude,
+                    latitudeDelta: 0.02,
+                    longitudeDelta: 0.02,
+                }, 300)
+            }
+        }
+    }
+    
+    // Handle selecting event from cluster
+    const handleClusterEventSelect = (event) => {
+        setClusterModalVisible(false)
         setSelectedEvent(event)
         
-        // Center map on selected marker
         if (mapRef.current) {
             mapRef.current.animateToRegion({
                 latitude: event.latitude,
@@ -167,7 +375,7 @@ export default function MapScreen() {
     const handleCardPress = () => {
         if (selectedEvent) {
             router.push({
-                pathname: '/(tabs)/listingDetails',
+                pathname: '/(map)/listingDetails',
                 params: { listingId: selectedEvent.$id }
             })
         }
@@ -178,10 +386,14 @@ export default function MapScreen() {
         setSelectedEvent(null)
     }
 
-    // Recenter on user
+    // Recenter on user location
     const handleRecenter = () => {
-        if (mapRef.current && location) {
-            mapRef.current.animateToRegion(location, 500)
+        if (mapRef.current && userLocation) {
+            mapRef.current.animateToRegion(userLocation, 500)
+            
+            // Also update search center to user location
+            setSearchCenter(userLocation)
+            setShowSearchButton(false)
         }
         setSelectedEvent(null)
     }
@@ -189,7 +401,7 @@ export default function MapScreen() {
     // Handle filter pill press
     const handleFilterPillPress = (eventType) => {
         if (selectedEventType === eventType) {
-            setSelectedEventType(null) // Deselect if already selected
+            setSelectedEventType(null)
         } else {
             setSelectedEventType(eventType)
         }
@@ -206,19 +418,42 @@ export default function MapScreen() {
         })
     }
 
-    // Get distance text
-    const getDistanceText = (event) => {
-        if (!location || !event.latitude || !event.longitude) return ''
-        const distance = calculateDistance(
-            location.latitude,
-            location.longitude,
+    // Get distance and ETA text
+    const getDistanceETAText = (event) => {
+        if (!userLocation || !event.latitude || !event.longitude) return { distance: '', eta: '' }
+        const distanceInKm = calculateDistance(
+            userLocation.latitude,
+            userLocation.longitude,
             event.latitude,
             event.longitude
         )
-        if (distance < 1) {
-            return `${Math.round(distance * 1000)}m away`
+        
+        // Calculate ETA (assume ~25 mph city driving)
+        const distanceMiles = kmToMiles(distanceInKm)
+        let etaMinutes
+        if (distanceMiles < 10) {
+            etaMinutes = (distanceMiles / 25) * 60
+        } else {
+            // First 5 miles at city speed, rest at highway
+            etaMinutes = ((5 / 25) + ((distanceMiles - 5) / 55)) * 60
         }
-        return `${distance.toFixed(1)} km away`
+        
+        // Format ETA
+        let etaText
+        if (etaMinutes < 1) {
+            etaText = '< 1 min'
+        } else if (etaMinutes < 60) {
+            etaText = `${Math.round(etaMinutes)} min`
+        } else {
+            const hours = Math.floor(etaMinutes / 60)
+            const mins = Math.round(etaMinutes % 60)
+            etaText = mins === 0 ? `${hours} hr` : `${hours} hr ${mins} min`
+        }
+        
+        return {
+            distance: formatDistance(distanceInKm),
+            eta: etaText
+        }
     }
 
     if (loading) {
@@ -230,7 +465,7 @@ export default function MapScreen() {
         )
     }
 
-    if (!location) {
+    if (!userLocation) {
         return (
             <View style={styles.loadingContainer}>
                 <Ionicons name="location-outline" size={48} color={COLORS.textTertiary} />
@@ -247,44 +482,61 @@ export default function MapScreen() {
                 ref={mapRef}
                 style={styles.map}
                 provider="google"
-                initialRegion={location}
+                initialRegion={userLocation}
                 showsUserLocation={true}
                 showsMyLocationButton={false}
                 onPress={handleMapPress}
+                onRegionChangeComplete={handleRegionChangeComplete}
+                customMapStyle={CUSTOM_MAP_STYLE}
             >
-                {/* Search radius circle */}
-                {/* <Circle
-                    center={{
-                        latitude: location.latitude,
-                        longitude: location.longitude,
-                    }}
-                    radius={searchRadius * 1000}
-                    fillColor="rgba(255, 87, 71, 0.08)"
-                    strokeColor="rgba(255, 87, 71, 0.3)"
-                    strokeWidth={2}
-                /> */}
-
-                {/* Event markers */}
-                {filteredEvents.map((event) => (
-                    <Marker
-                        key={event.$id}
-                        coordinate={{
-                            latitude: event.latitude,
-                            longitude: event.longitude,
-                        }}
-                        onPress={() => handleMarkerPress(event)}
-                    >
-                        <View style={[
-                            styles.markerDot,
-                            { backgroundColor: EVENT_TYPE_COLORS[event.eventType] || COLORS.primary },
-                            selectedEvent?.$id === event.$id && styles.markerDotSelected
-                        ]}>
-                            {selectedEvent?.$id === event.$id && (
-                                <View style={styles.markerDotInner} />
-                            )}
-                        </View>
-                    </Marker>
-                ))}
+                {/* Event markers (clustered) */}
+                {clusteredEvents.map((cluster) => {
+                    const isSelected = cluster.count === 1 && selectedEvent?.$id === cluster.events[0].$id
+                    const markerColor = EVENT_TYPE_COLORS[cluster.eventType] || COLORS.primary
+                    const iconName = EVENT_TYPE_ICONS[cluster.eventType] || 'calendar-outline'
+                    
+                    return (
+                        <Marker
+                            key={cluster.id}
+                            coordinate={{
+                                latitude: cluster.latitude,
+                                longitude: cluster.longitude,
+                            }}
+                            onPress={() => handleMarkerPress(cluster)}
+                            anchor={{ x: 0.5, y: 1 }}
+                        >
+                            <View style={styles.markerContainer}>
+                                <View style={[
+                                    styles.markerBubble,
+                                    { borderColor: markerColor },
+                                    isSelected && styles.markerBubbleSelected,
+                                    isSelected && { borderColor: markerColor, backgroundColor: markerColor }
+                                ]}>
+                                    {cluster.count > 1 ? (
+                                        <Text style={[
+                                            styles.clusterCount,
+                                            { color: markerColor }
+                                        ]}>{cluster.count}</Text>
+                                    ) : (
+                                        <Ionicons 
+                                            name={iconName} 
+                                            size={isSelected ? 20 : 16} 
+                                            color={isSelected ? '#FFFFFF' : markerColor} 
+                                        />
+                                    )}
+                                </View>
+                                <View style={[
+                                    styles.markerPointer,
+                                    { borderTopColor: isSelected ? markerColor : '#FFFFFF' }
+                                ]} />
+                                <View style={[
+                                    styles.markerPointerBorder,
+                                    { borderTopColor: markerColor }
+                                ]} />
+                            </View>
+                        </Marker>
+                    )
+                })}
             </MapView>
 
             {/* Header with Filter Pills */}
@@ -294,7 +546,7 @@ export default function MapScreen() {
                         <View style={styles.headerContent}>
                             <Text style={styles.headerTitle}>Nearby Events</Text>
                             <Text style={styles.headerSubtitle}>
-                                {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''} within {searchRadius} km
+                                {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''} within {searchRadius} {getUnitLabel()}
                             </Text>
                         </View>
                         <TouchableOpacity
@@ -348,6 +600,34 @@ export default function MapScreen() {
                     ))}
                 </ScrollView>
             </View>
+
+            {/* Search This Area Button */}
+            <Animated.View
+                style={[
+                    styles.searchAreaButtonContainer,
+                    {
+                        transform: [
+                            {
+                                translateY: searchButtonAnimation.interpolate({
+                                    inputRange: [0, 1],
+                                    outputRange: [-100, 0],
+                                })
+                            }
+                        ],
+                        opacity: searchButtonAnimation,
+                    }
+                ]}
+                pointerEvents={showSearchButton ? 'auto' : 'none'}
+            >
+                <TouchableOpacity
+                    style={styles.searchAreaButton}
+                    onPress={handleSearchThisArea}
+                    activeOpacity={0.9}
+                >
+                    <Ionicons name="refresh" size={18} color={COLORS.buttonPrimaryText} />
+                    <Text style={styles.searchAreaButtonText}>Search this area</Text>
+                </TouchableOpacity>
+            </Animated.View>
 
             {/* Center on Me Button - Bottom Right */}
             <TouchableOpacity
@@ -420,9 +700,16 @@ export default function MapScreen() {
                             )}
                             
                             <View style={styles.previewInfoItem}>
-                                <Ionicons name="navigate-outline" size={14} color={COLORS.primary} />
+                                <Ionicons name="car-outline" size={14} color={COLORS.primary} />
                                 <Text style={[styles.previewInfoText, { color: COLORS.primary }]}>
-                                    {getDistanceText(selectedEvent)}
+                                    {getDistanceETAText(selectedEvent).distance}
+                                </Text>
+                            </View>
+                            
+                            <View style={styles.previewInfoItem}>
+                                <Ionicons name="time" size={14} color={COLORS.primary} />
+                                <Text style={[styles.previewInfoText, { color: COLORS.primary }]}>
+                                    {getDistanceETAText(selectedEvent).eta}
                                 </Text>
                             </View>
                         </View>
@@ -493,7 +780,7 @@ export default function MapScreen() {
                                             <Text style={[
                                                 styles.radiusOptionText,
                                                 searchRadius === radius && styles.radiusOptionTextActive
-                                            ]}>{radius} km</Text>
+                                            ]}>{radius} {getUnitLabel()}</Text>
                                         </TouchableOpacity>
                                     ))}
                                 </View>
@@ -505,6 +792,62 @@ export default function MapScreen() {
                             >
                                 <Text style={styles.applyButtonText}>Apply</Text>
                             </TouchableOpacity>
+                        </Pressable>
+                    </View>
+                </Pressable>
+            </Modal>
+
+            {/* Cluster Events Modal */}
+            <Modal
+                visible={clusterModalVisible}
+                animationType="slide"
+                transparent={true}
+                onRequestClose={() => setClusterModalVisible(false)}
+            >
+                <Pressable 
+                    style={styles.modalOverlay}
+                    onPress={() => setClusterModalVisible(false)}
+                >
+                    <View style={styles.clusterModalContent}>
+                        <Pressable onPress={() => {}}>
+                            <View style={styles.modalHeader}>
+                                <Text style={styles.modalTitle}>
+                                    {clusterEvents.length} Events at this Location
+                                </Text>
+                                <TouchableOpacity onPress={() => setClusterModalVisible(false)}>
+                                    <Ionicons name="close" size={24} color={COLORS.text} />
+                                </TouchableOpacity>
+                            </View>
+
+                            <ScrollView style={styles.clusterEventsList}>
+                                {clusterEvents.map((event) => (
+                                    <TouchableOpacity
+                                        key={event.$id}
+                                        style={styles.clusterEventItem}
+                                        onPress={() => handleClusterEventSelect(event)}
+                                    >
+                                        <View style={[
+                                            styles.clusterEventIcon,
+                                            { backgroundColor: EVENT_TYPE_COLORS[event.eventType] || COLORS.primary }
+                                        ]}>
+                                            <Ionicons 
+                                                name={EVENT_TYPE_ICONS[event.eventType] || 'calendar-outline'} 
+                                                size={16} 
+                                                color="#FFFFFF" 
+                                            />
+                                        </View>
+                                        <View style={styles.clusterEventInfo}>
+                                            <Text style={styles.clusterEventTitle} numberOfLines={1}>
+                                                {event.title}
+                                            </Text>
+                                            <Text style={styles.clusterEventMeta}>
+                                                {EVENT_TYPE_LABELS[event.eventType]} • {formatDate(event.date || event.startDate)}
+                                            </Text>
+                                        </View>
+                                        <Ionicons name="chevron-forward" size={20} color={COLORS.textTertiary} />
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
                         </Pressable>
                     </View>
                 </Pressable>
@@ -617,11 +960,35 @@ const styles = StyleSheet.create({
     filterPillTextActive: {
         color: COLORS.buttonPrimaryText,
     },
+
+    // Search This Area Button
+    searchAreaButtonContainer: {
+        position: 'absolute',
+        top: 180,
+        left: 0,
+        right: 0,
+        alignItems: 'center',
+    },
+    searchAreaButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: SPACING.sm,
+        backgroundColor: COLORS.primary,
+        paddingHorizontal: SPACING.lg,
+        paddingVertical: SPACING.sm,
+        borderRadius: RADIUS.full,
+        ...SHADOWS.medium,
+    },
+    searchAreaButtonText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: COLORS.buttonPrimaryText,
+    },
     
     // Center Button
     centerButton: {
         position: 'absolute',
-        bottom: 100,
+        bottom: SPACING.lg,
         right: SPACING.lg,
         width: 48,
         height: 48,
@@ -633,27 +1000,55 @@ const styles = StyleSheet.create({
     },
     
     // Markers
-    markerDot: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
+    markerContainer: {
+        alignItems: 'center',
+    },
+    markerBubble: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: '#FFFFFF',
         borderWidth: 3,
-        borderColor: COLORS.surface,
         justifyContent: 'center',
         alignItems: 'center',
-        ...SHADOWS.small,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 4,
+        elevation: 5,
     },
-    markerDotSelected: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        borderWidth: 4,
+    markerBubbleSelected: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        borderWidth: 3,
     },
-    markerDotInner: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: COLORS.surface,
+    markerPointer: {
+        width: 0,
+        height: 0,
+        borderLeftWidth: 8,
+        borderRightWidth: 8,
+        borderTopWidth: 10,
+        borderLeftColor: 'transparent',
+        borderRightColor: 'transparent',
+        borderTopColor: '#FFFFFF',
+        marginTop: -2,
+    },
+    markerPointerBorder: {
+        position: 'absolute',
+        bottom: -12,
+        width: 0,
+        height: 0,
+        borderLeftWidth: 10,
+        borderRightWidth: 10,
+        borderTopWidth: 12,
+        borderLeftColor: 'transparent',
+        borderRightColor: 'transparent',
+        zIndex: -1,
+    },
+    clusterCount: {
+        fontSize: 14,
+        fontWeight: 'bold',
     },
     
     // Preview Card
@@ -813,5 +1208,44 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: 'bold',
         color: COLORS.buttonPrimaryText,
+    },
+    // Cluster Modal Styles
+    clusterModalContent: {
+        backgroundColor: COLORS.background,
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        padding: SPACING.xl,
+        maxHeight: '60%',
+    },
+    clusterEventsList: {
+        marginTop: SPACING.md,
+    },
+    clusterEventItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: SPACING.md,
+        borderBottomWidth: 1,
+        borderBottomColor: COLORS.border,
+    },
+    clusterEventIcon: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: SPACING.md,
+    },
+    clusterEventInfo: {
+        flex: 1,
+    },
+    clusterEventTitle: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: COLORS.text,
+        marginBottom: 2,
+    },
+    clusterEventMeta: {
+        fontSize: 13,
+        color: COLORS.textSecondary,
     },
 })

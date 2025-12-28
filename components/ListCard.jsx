@@ -1,12 +1,22 @@
+import { useMemo } from 'react'
 import { StyleSheet, View, TouchableOpacity, Image, Text } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
-import { COLORS, SPACING, RADIUS } from '../../constants/Colors'
-import { EVENT_TYPE_LABELS, EVENT_TYPE_ICONS } from '../../lib/appwrite'
-import { formatDate, formatDateRange, isHappeningSoon } from '../../utils/dateHelpers'
-import SaveButton from '../../components/SaveButton'
+import { COLORS, SPACING, RADIUS } from '../constants/Colors'
+import { EVENT_TYPE_LABELS, EVENT_TYPE_ICONS } from '../lib/appwrite'
+import { formatDate, formatDateRange, isHappeningSoon } from '../utils/dateHelpers'
+import { locationService } from '../lib/locationService'
+import SaveButton from './SaveButton'
 
-const ListCard = ({ listing, onPress, showAuthor = false, currentUser }) => {
+const ListCard = ({ listing, onPress, showAuthor = false, currentUser, userLocation }) => {
     const isOwner = currentUser && listing.userId === currentUser.$id
+
+    // Calculate distance and ETA if user location is available
+    const distanceInfo = useMemo(() => {
+        if (!userLocation || !listing?.latitude || !listing?.longitude) {
+            return null
+        }
+        return locationService.getDistanceAndETA(userLocation, listing, 'miles')
+    }, [userLocation, listing?.latitude, listing?.longitude])
 
     // Determine which date to display
     const getDisplayDate = () => {
@@ -153,6 +163,21 @@ const ListCard = ({ listing, onPress, showAuthor = false, currentUser }) => {
                         </View>
                     </View>
 
+                    {/* Distance and ETA */}
+                    {distanceInfo && (
+                        <View style={styles.distanceRow}>
+                            <View style={styles.distanceItem}>
+                                <Ionicons name="car-outline" size={16} color={COLORS.primary} />
+                                <Text style={styles.distanceText}>{distanceInfo.distance}</Text>
+                            </View>
+                            <Text style={styles.distanceSeparator}>•</Text>
+                            <View style={styles.distanceItem}>
+                                <Ionicons name="time-outline" size={16} color={COLORS.primary} />
+                                <Text style={styles.distanceText}>{distanceInfo.eta}</Text>
+                            </View>
+                        </View>
+                    )}
+
                     {/* Tags */}
                     {listing.tags && listing.tags.length > 0 && (
                         <View style={styles.tagsContainer}>
@@ -287,6 +312,29 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: COLORS.textTertiary,
         marginTop: 2,
+    },
+    distanceRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginTop: SPACING.sm,
+        paddingTop: SPACING.sm,
+        borderTopWidth: 1,
+        borderTopColor: COLORS.border,
+    },
+    distanceItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    distanceText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: COLORS.primary,
+    },
+    distanceSeparator: {
+        fontSize: 14,
+        color: COLORS.textTertiary,
     },
     tagsContainer: {
         flexDirection: 'row',

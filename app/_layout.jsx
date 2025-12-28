@@ -4,6 +4,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { Ionicons } from '@expo/vector-icons'
 import { AuthProvider } from '../contexts/AuthContext' 
 import { ListingsProvider } from '../contexts/ListingsContext' 
+import { SavedEventsProvider } from '../contexts/SavedEventsContext'
 
 const TabsLayout = () => {
     const insets = useSafeAreaInsets()
@@ -24,19 +25,9 @@ const TabsLayout = () => {
                 },
                 animation: 'shift',
                 animationEnabled: true,
-                lazy: true, 
                 tabBarHideOnKeyboard: true
             }}
         >
-            <Tabs.Screen 
-                name='(auth)'
-                options={{
-                    title: 'Profile',
-                    tabBarIcon: ({ color, size }) => (
-                        <Ionicons name="person-outline" size={size} color={color} />
-                    )
-                }}
-            />
             <Tabs.Screen 
                 name='(map)'
                 options={{
@@ -46,7 +37,16 @@ const TabsLayout = () => {
                     )
                 }}
             />
-
+            <Tabs.Screen 
+                name='(auth)'
+                options={{
+                    title: 'Profile',
+                    tabBarIcon: ({ color, size }) => (
+                        <Ionicons name="person-outline" size={size} color={color} />
+                    )
+                }}
+            />
+            
             <Tabs.Screen
                 name='(tabs)'
                 options={{
@@ -56,16 +56,11 @@ const TabsLayout = () => {
                     )
                 }}
             />
-
             <Tabs.Screen
                 name='(test)'
                 options={{
-                    // title:'Testing',
-                    // tabBarIcon: ({ color, size }) => (
-                    //     <Ionicons name="code-slash-outline" size={size} color={color} />
-                    // )
                     href: null,
-                    headerShow: false
+                    headerShown: false
                 }}
             />
 
@@ -84,9 +79,11 @@ const RootLayout = () => {
     return (
         <SafeAreaProvider>
             <AuthProvider>
-                <ListingsProvider> 
-                    <TabsLayout />
-                </ListingsProvider>
+                <SavedEventsProvider>
+                    <ListingsProvider> 
+                        <TabsLayout />
+                    </ListingsProvider>
+                </SavedEventsProvider>
             </AuthProvider>
         </SafeAreaProvider>
     )

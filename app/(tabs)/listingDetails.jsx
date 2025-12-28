@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
-import { View, StyleSheet, Text, ScrollView, Image, TouchableOpacity, Alert, Linking } from 'react-native'
+import { View, StyleSheet, Text, ScrollView, TouchableOpacity, Alert, Linking, ActivityIndicator } from 'react-native'
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 
 import ThemedSafeArea from '../../components/ThemedSafeArea'
 import ThemedInfoCard from '../../components/ThemedInfoCard'
+import ImageGallery from '../../components/ImageGallery'
+import SaveButton from '../../components/SaveButton'
+import ShareButton from '../../components/ShareButton'
 import { useListings } from '../../contexts/ListingsContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { COLORS, SPACING, RADIUS } from '../../constants/Colors'
@@ -16,6 +19,8 @@ import {
     isHappeningSoon,
     isPast 
 } from '../../utils/dateHelpers'
+import { calendarService } from '../../lib/calendarService'
+import { locationService } from '../../lib/locationService'
 
 export default function ListingDetailsScreen() {
     const { listingId } = useLocalSearchParams()
@@ -25,10 +30,9 @@ export default function ListingDetailsScreen() {
     const [listing, setListing] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
-
-    // useEffect(() => {
-    //     loadListing()
-    // }, [listingId])
+    const [addingToCalendar, setAddingToCalendar] = useState(false)
+    const [userLocation, setUserLocation] = useState(null)
+    const [distanceInfo, setDistanceInfo] = useState(null)
 
     useFocusEffect(
         useCallback(() => {
@@ -37,6 +41,25 @@ export default function ListingDetailsScreen() {
             }
         }, [listingId])
     )
+
+    // Get user location on mount
+    useEffect(() => {
+        const getLocation = async () => {
+            const location = await locationService.getCurrentLocation()
+            if (location) {
+                setUserLocation(location)
+            }
+        }
+        getLocation()
+    }, [])
+
+    // Calculate distance when we have both location and listing
+    useEffect(() => {
+        if (userLocation && listing?.latitude && listing?.longitude) {
+            const info = locationService.getDistanceAndETA(userLocation, listing, 'miles')
+            setDistanceInfo(info)
+        }
+    }, [userLocation, listing])
 
     const loadListing = async () => {
         try {
@@ -99,6 +122,56 @@ export default function ListingDetailsScreen() {
         Linking.openURL(url)
     }
 
+    const handleAddToCalendar = async () => {
+        if (!listing || addingToCalendar) return
+        
+        setAddingToCalendar(true)
+        
+        try {
+            let result
+            
+            if (listing.multiday && listing.startDate && listing.endDate) {
+                result = await calendarService.addMultiDayToCalendar(listing)
+            } else {
+                result = await calendarService.addToCalendar(listing)
+            }
+            
+            if (result.success) {
+                Alert.alert(
+                    'Added to Calendar',
+                    `"${listing.title}" has been added to your calendar.`,
+                    [{ text: 'OK' }]
+                )
+            } else if (result.error && result.error !== 'Permission denied') {
+                Alert.alert(
+                    'Error',
+                    'Could not add event to calendar. Please try again.',
+                    [{ text: 'OK' }]
+                )
+            }
+        } catch (error) {
+            console.error('Error adding to calendar:', error)
+            Alert.alert(
+                'Error',
+                'Something went wrong. Please try again.',
+                [{ text: 'OK' }]
+            )
+        } finally {
+            setAddingToCalendar(false)
+        }
+    }
+
+    // Get images array - handle both old single image and new images array
+    const getImages = () => {
+        if (listing.images && listing.images.length > 0) {
+            return listing.images
+        }
+        if (listing.image) {
+            return [listing.image]
+        }
+        return []
+    }
+
     // Check if current user is the owner
     const isOwner = user && listing && user.$id === listing.userId
 
@@ -138,27 +211,22 @@ export default function ListingDetailsScreen() {
     const eventDate = listing.date || listing.startDate
     const relativeTime = getRelativeTimeString(eventDate)
     const eventIsPast = isPast(eventDate)
+    const images = getImages()
 
     return (
-        <ThemedSafeArea scrollable={false}>
-            <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-                {/* Header with Image */}
+        <ThemedSafeArea scrollable={false} extraBottomPadding={0} edges={['top']}>
+            <ScrollView 
+                style={styles.container} 
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 0 }}
+            >
+                {/* Image Gallery */}
                 <View style={styles.imageContainer}>
-                    {listing.image ? (
-                        <Image
-                            source={{ uri: listing.image }}
-                            style={styles.image}
-                            resizeMode="cover"
-                        />
-                    ) : (
-                        <View style={[styles.image, styles.placeholderImage]}>
-                            <Ionicons 
-                                name={EVENT_TYPE_ICONS[listing.eventType] || 'calendar-outline'} 
-                                size={80} 
-                                color={COLORS.textTertiary} 
-                            />
-                        </View>
-                    )}
+                    <ImageGallery 
+                        images={images}
+                        placeholderIcon={EVENT_TYPE_ICONS[listing.eventType] || 'calendar-outline'}
+                        height={300}
+                    />
                     
                     {/* Back Button */}
                     <TouchableOpacity
@@ -182,6 +250,12 @@ export default function ListingDetailsScreen() {
                                 <Text style={styles.badgeText}>Multi-Day</Text>
                             </View>
                         )}
+                        {listing.isRecurring && (
+                            <View style={[styles.badge, styles.recurringBadge]}>
+                                <Ionicons name="repeat" size={14} color={COLORS.badgeText} />
+                                <Text style={styles.badgeText}>Recurring</Text>
+                            </View>
+                        )}
                         {isHappeningSoon(eventDate) && !eventIsPast && (
                             <View style={[styles.badge, styles.soonBadge]}>
                                 <Ionicons name="time" size={14} color={COLORS.badgeText} />
@@ -192,6 +266,22 @@ export default function ListingDetailsScreen() {
                             <View style={[styles.badge, styles.pastBadge]}>
                                 <Text style={styles.badgeText}>Past Event</Text>
                             </View>
+                        )}
+                    </View>
+
+                    {/* Save and Share Buttons */}
+                    <View style={styles.actionButtonsContainer}>
+                        <ShareButton 
+                            listing={listing}
+                            size="medium"
+                            variant="icon"
+                        />
+                        {!isOwner && (
+                            <SaveButton 
+                                listingId={listing.$id}
+                                size="medium"
+                                variant="icon"
+                            />
                         )}
                     </View>
                 </View>
@@ -220,16 +310,6 @@ export default function ListingDetailsScreen() {
                     {listing.price && (
                         <Text style={styles.price}>{listing.price}</Text>
                     )}
-
-                    <ThemedInfoCard style={styles.infoCard}>
-                        <View style={styles.infoRow}>
-                            <Ionicons name="add-outline" size={24} color={COLORS.primary}/>
-                            <View style={styles.infoTextContainer}>
-                                <Text style={styles.infoLabel}>Add to Calendar</Text>
-                                <Text style={styles.infoValue}>Link to Google or Apple Calendar</Text>
-                            </View>
-                        </View>
-                    </ThemedInfoCard>
 
                     {/* Date & Time Card */}
                     <ThemedInfoCard style={styles.infoCard}>
@@ -270,6 +350,20 @@ export default function ListingDetailsScreen() {
                                 )}
                             </View>
                         </View>
+
+                        {/* Distance and ETA */}
+                        {distanceInfo && (
+                            <View style={styles.distanceETARow}>
+                                <View style={styles.distanceItem}>
+                                    <Ionicons name="car-outline" size={18} color={COLORS.primary} />
+                                    <Text style={styles.distanceText}>{distanceInfo.distance}</Text>
+                                </View>
+                                <View style={styles.etaItem}>
+                                    <Ionicons name="time-outline" size={18} color={COLORS.primary} />
+                                    <Text style={styles.etaText}>{distanceInfo.eta} drive</Text>
+                                </View>
+                            </View>
+                        )}
                         
                         <TouchableOpacity
                             style={styles.directionsButton}
@@ -279,6 +373,30 @@ export default function ListingDetailsScreen() {
                             <Text style={styles.directionsButtonText}>Get Directions</Text>
                         </TouchableOpacity>
                     </ThemedInfoCard>
+
+                    {/* Add to Calendar */}
+                    <TouchableOpacity 
+                        onPress={handleAddToCalendar}
+                        disabled={addingToCalendar}
+                        activeOpacity={0.7}
+                    >
+                        <ThemedInfoCard style={styles.infoCard}>
+                            <View style={styles.infoRow}>
+                                {addingToCalendar ? (
+                                    <ActivityIndicator size="small" color={COLORS.primary} />
+                                ) : (
+                                    <Ionicons name="add-circle-outline" size={24} color={COLORS.primary}/>
+                                )}
+                                <View style={styles.infoTextContainer}>
+                                    <Text style={styles.infoLabel}>Add to Calendar</Text>
+                                    <Text style={styles.infoValue}>
+                                        {addingToCalendar ? 'Adding...' : 'Save to Google or Apple Calendar'}
+                                    </Text>
+                                </View>
+                                <Ionicons name="chevron-forward" size={20} color={COLORS.textTertiary} />
+                            </View>
+                        </ThemedInfoCard>
+                    </TouchableOpacity>
 
                     {/* Description */}
                     {listing.description && (
@@ -303,11 +421,12 @@ export default function ListingDetailsScreen() {
                     )}
 
                     {/* Contact Information */}
-                    {(listing.contactPhone || listing.contactEmail) && (
+                    {((listing.contactPhone && listing.showPhone !== false) || 
+                      (listing.contactEmail && listing.showEmail !== false)) && (
                         <ThemedInfoCard style={styles.infoCard}>
                             <Text style={styles.sectionTitle}>Contact</Text>
                             
-                            {listing.contactPhone && (
+                            {listing.contactPhone && listing.showPhone !== false && (
                                 <TouchableOpacity
                                     style={styles.contactButton}
                                     onPress={handleCallPhone}
@@ -319,7 +438,7 @@ export default function ListingDetailsScreen() {
                                 </TouchableOpacity>
                             )}
                             
-                            {listing.contactEmail && (
+                            {listing.contactEmail && listing.showEmail !== false && (
                                 <TouchableOpacity
                                     style={styles.contactButton}
                                     onPress={handleEmailContact}
@@ -368,14 +487,6 @@ const styles = StyleSheet.create({
         height: 300,
         backgroundColor: COLORS.surfaceSecondary,
     },
-    image: {
-        width: '100%',
-        height: '100%',
-    },
-    placeholderImage: {
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
     backButtonOverlay: {
         position: 'absolute',
         top: SPACING.xl,
@@ -386,12 +497,24 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
         justifyContent: 'center',
         alignItems: 'center',
+        zIndex: 10,
     },
-    badgeContainer: {
+    actionButtonsContainer: {
         position: 'absolute',
         top: SPACING.xl,
         right: SPACING.lg,
+        flexDirection: 'row',
+        gap: SPACING.sm,
+        zIndex: 10,
+    },
+    badgeContainer: {
+        position: 'absolute',
+        bottom: SPACING.lg,
+        left: SPACING.lg,
         gap: SPACING.xs,
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        zIndex: 10,
     },
     badge: {
         flexDirection: 'row',
@@ -405,6 +528,9 @@ const styles = StyleSheet.create({
     multidayBadge: {
         backgroundColor: COLORS.info,
     },
+    recurringBadge: {
+        backgroundColor: '#8B5CF6',
+    },
     soonBadge: {
         backgroundColor: COLORS.warning,
     },
@@ -417,7 +543,9 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     content: {
-        padding: SPACING.lg,
+        paddingHorizontal: SPACING.lg,
+        paddingTop: SPACING.lg,
+        paddingBottom: 0,
     },
     eventTypeRow: {
         flexDirection: 'row',
@@ -475,6 +603,35 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: COLORS.textTertiary,
         marginTop: 4,
+    },
+    distanceETARow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: SPACING.lg,
+        paddingVertical: SPACING.md,
+        marginTop: SPACING.sm,
+        borderTopWidth: 1,
+        borderTopColor: COLORS.border,
+    },
+    distanceItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    distanceText: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: COLORS.text,
+    },
+    etaItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    etaText: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: COLORS.text,
     },
     directionsButton: {
         flexDirection: 'row',
@@ -579,3 +736,4 @@ const styles = StyleSheet.create({
         color: COLORS.buttonPrimaryText,
     },
 })
+

@@ -9,21 +9,40 @@ const AuthLayoutNav = () => {
     const segments = useSegments()
     const router = useRouter()
 
+    // useEffect(() => {
+    //     if (loading) return 
+
+    //     const inAuthGroup = segments[0] ==='(auth)'
+
+    //     if(!user && inAuthGroup) {
+    //         if(segments[1] !== 'login' && segments[1] !== 'register' && segments[1] !== 'forgot') {
+    //             router.replace('/login')
+    //         } 
+    //     } else if(user && inAuthGroup) {
+    //             if (segments[1] !== 'profile'){
+    //                 router.replace('/profile')
+    //             }
+    //         }
+    //     }, [user, loading, segments])
+
     useEffect(() => {
         if (loading) return 
 
-        const inAuthGroup = segments[0] ==='(auth)'
+        const inAuthGroup = segments[0] === '(auth)'
 
-        if(!user && inAuthGroup) {
-            if(segments[1] !== 'login' && segments[1] !== 'register' && segments[1] !== 'forgot') {
+        if (!user && inAuthGroup) {
+            // Not logged in - only allow login, register, forgot
+            if (segments[1] !== 'login' && segments[1] !== 'register' && segments[1] !== 'forgot') {
                 router.replace('/login')
             } 
-        } else if(user && inAuthGroup) {
-                if (segments[1] !== 'profile'){
-                    router.replace('/profile')
-                }
+        } else if (user && inAuthGroup) {
+            // Logged in - allow profile and legal screens
+            const allowedScreens = ['profile', 'privacyPolicy', 'termsOfService']
+            if (!allowedScreens.includes(segments[1])) {
+                router.replace('/profile')
             }
-        }, [user, loading, segments])
+        }
+    }, [user, loading, segments])
 
     return (
         <>
@@ -33,6 +52,8 @@ const AuthLayoutNav = () => {
                 <Stack.Screen name="login" />
                 <Stack.Screen name="register" />
                 <Stack.Screen name="forgot" />
+                <Stack.Screen name="privacyPolicy" />
+                <Stack.Screen name="termsOfService" />
             </Stack>
         </>
     )
