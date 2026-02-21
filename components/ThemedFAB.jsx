@@ -54,7 +54,7 @@ const getPositionStyle = (position) => {
             return { left: SPACING.lg }
         case 'bottom-center':
             return { left: '50%', marginLeft: -30 }
-        case 'buttom-right':
+        case 'bottom-right':
             return { right: SPACING.lg }
     }
 }
