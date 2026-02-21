@@ -1,8 +1,15 @@
+
 require('dotenv').config();
 
 console.log('--- Config Environment Check ---');
-console.log('Google Maps Key Found:', !!process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY);
-console.log('Appwrite Endpoint Found:', !!process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT);
+console.log('Google Maps Key Found:', !!process.env.GOOGLE_MAPS_API_KEY);
+console.log('Appwrite Endpoint Found:', !!process.env.APPWRITE_ENDPOINT);
+console.log('Appwrite Project ID: ', !!process.env.APPWRITE_PROJECT_ID);
+console.log('Appwrite Database ID: ', !!process.env.APPWRITE_DATABASE_ID);
+console.log('Appwrite Collection Listings ID: ', !!process.env.APPWRITE_COLLECTION_LISTINGS_ID);
+console.log('Appwrite Collection Notes ID: ', !!process.env.APPWRITE_COLLECTION_NOTES_ID);
+console.log('Appwrite Collection Saved Events ID: ', !!process.env.APPWRITE_COLLECTION_SAVED_EVENTS_ID);
+console.log('Appwrite Bucket ID:', !!process.env.APPWRITE_BUCKET_ID);
 console.log('-------------------------------');
 
 export default ({ config }) => {
@@ -29,7 +36,7 @@ export default ({ config }) => {
                 ITSAppUsesNonExemptEncryption: false,
             },
             config: {
-                googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
+                googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY,
             },
         },
         android: {
@@ -45,7 +52,7 @@ export default ({ config }) => {
             ],
             config: {
                 googleMaps: {
-                    apiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
+                    apiKey: process.env.GOOGLE_MAPS_API_KEY,
                 },
             },
         },
@@ -72,6 +79,14 @@ export default ({ config }) => {
             eas: {
                 projectId: '192078dc-8f13-40ce-80f4-d5ab1f8506ed',
             },
+            appwriteEndpoint: process.env.APPWRITE_ENDPOINT,
+            appwriteProjectId: process.env.APPWRITE_PROJECT_ID,
+            appwriteDatabaseId: process.env.APPWRITE_DATABASE_ID,
+            appwriteCollectionListingsId: process.env.APPWRITE_COLLECTION_LISTINGS_ID,
+            appwriteCollectionNotesId: process.env.APPWRITE_COLLECTION_NOTES_ID,
+            appwriteCollectionSavedEventsId: process.env.APPWRITE_COLLECTION_SAVED_EVENTS_ID,
+            appwriteBucketId: process.env.APPWRITE_BUCKET_ID,
+            googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY,
         },
     };
 };
