@@ -1,15 +1,12 @@
 import { useState, useEffect } from 'react'
-import { 
-    View, 
-    Text, 
-    StyleSheet, 
-    Modal, 
+import {
+    View,
+    Text,
+    StyleSheet,
+    Modal,
     TouchableOpacity,
-    TextInput,
     Alert,
-    ActivityIndicator,
-    KeyboardAvoidingView,
-    Platform
+    ActivityIndicator
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import * as Location from 'expo-location'
@@ -21,14 +18,14 @@ const ONBOARDING_COMPLETE_KEY = '@smashing_wallets_onboarding_complete'
 
 /**
  * Onboarding modal for first-time users
- * Handles location permission and manual zip code fallback
+ * Handles device location permission request
  */
 const OnboardingModal = ({ onComplete }) => {
     const { user, updateUserPreferences } = useAuth()
     const [visible, setVisible] = useState(false)
-    const [step, setStep] = useState('welcome') // 'welcome' | 'location' | 'manual' | 'complete'
+    // Steps: 'welcome' | 'location' | 'permissionGranted' | 'permissionDenied' | 'complete'
+    const [step, setStep] = useState('welcome')
     const [loading, setLoading] = useState(false)
-    const [zipCode, setZipCode] = useState('')
     const [checkingOnboarding, setCheckingOnboarding] = useState(true)
 
     useEffect(() => {
@@ -37,7 +34,6 @@ const OnboardingModal = ({ onComplete }) => {
 
     const checkOnboardingStatus = async () => {
         try {
-            // Check if onboarding has been completed
             const completed = await AsyncStorage.getItem(ONBOARDING_COMPLETE_KEY)
             
             if (!completed) {
@@ -52,6 +48,7 @@ const OnboardingModal = ({ onComplete }) => {
 
     const handleRequestLocation = async () => {
         setLoading(true)
+        
         try {
             const { status } = await Location.requestForegroundPermissionsAsync()
             
@@ -64,65 +61,39 @@ const OnboardingModal = ({ onComplete }) => {
                         manualZipCode: null
                     })
                 }
-                await completeOnboarding()
+                // Show the granted result screen - user must tap to continue
+                setStep('permissionGranted')
             } else {
-                // Permission denied, show manual option
-                setStep('manual')
+                // Show the denied result screen - user must tap to continue
+                setStep('permissionDenied')
             }
         } catch (error) {
             Alert.alert('Error', 'Failed to request location permission')
-            setStep('manual')
+            setStep('permissionDenied')
         } finally {
             setLoading(false)
         }
     }
 
-    const handleUseManualLocation = () => {
-        setStep('manual')
+    const handleGrantedContinue = async () => {
+        await markOnboardingComplete()
+        setStep('complete')
     }
 
-    const handleSaveZipCode = async () => {
-        // Validate zip code (US format: 5 digits)
-        const zipRegex = /^\d{5}$/
-        if (!zipRegex.test(zipCode)) {
-            Alert.alert('Invalid Zip Code', 'Please enter a valid 5-digit zip code')
-            return
-        }
-
-        setLoading(true)
-        try {
-            if (user) {
-                await updateUserPreferences({
-                    ...user.prefs,
-                    locationMode: 'manual',
-                    manualZipCode: zipCode
-                })
-            } else {
-                // Store locally for non-logged in users
-                await AsyncStorage.setItem('@smashing_wallets_zip', zipCode)
-            }
-            await completeOnboarding()
-        } catch (error) {
-            Alert.alert('Error', 'Failed to save location preference')
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    const completeOnboarding = async () => {
+    const markOnboardingComplete = async () => {
         try {
             await AsyncStorage.setItem(ONBOARDING_COMPLETE_KEY, 'true')
-            setStep('complete')
-            
-            // Small delay to show success state
-            setTimeout(() => {
-                setVisible(false)
-                if (onComplete) onComplete()
-            }, 1500)
         } catch (error) {
             console.error('Error completing onboarding:', error)
         }
     }
+
+    const handleClose = () => {
+        setVisible(false)
+        if (onComplete) onComplete()
+    }
+
+    // ===== RENDER FUNCTIONS =====
 
     const renderWelcome = () => (
         <View style={styles.stepContainer}>
@@ -189,72 +160,75 @@ const OnboardingModal = ({ onComplete }) => {
                     </>
                 )}
             </TouchableOpacity>
+        </View>
+    )
+
+    const renderPermissionGranted = () => (
+        <View style={styles.stepContainer}>
+            <View style={[styles.iconCircle, styles.successCircle]}>
+                <Ionicons name="checkmark" size={48} color="#FFFFFF" />
+            </View>
+            
+            <Text style={styles.title}>Location Enabled!</Text>
+            
+            <Text style={styles.description}>
+                Thanks for enabling location access!
+                {'\n\n'}
+                We'll use your location to show you yard sales, estate sales, and other events happening near you.
+                {'\n\n'}
+                Your location is never shared with other users.
+            </Text>
 
             <TouchableOpacity 
-                style={styles.secondaryButton}
-                onPress={handleUseManualLocation}
-                disabled={loading}
+                style={styles.primaryButton}
+                onPress={handleGrantedContinue}
             >
-                <Text style={styles.secondaryButtonText}>Enter Zip Code Instead</Text>
+                <Text style={styles.primaryButtonText}>Continue</Text>
+                <Ionicons name="arrow-forward" size={20} color={COLORS.buttonPrimaryText} />
             </TouchableOpacity>
         </View>
     )
 
-    const renderManual = () => (
-        <KeyboardAvoidingView 
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.stepContainer}
-        >
-            <View style={styles.iconCircle}>
-                <Ionicons name="keypad-outline" size={48} color={COLORS.primary} />
+    const handleDeniedContinue = async () => {
+        await markOnboardingComplete()
+        setStep('complete')
+    }
+
+    const renderPermissionDenied = () => (
+        <View style={styles.stepContainer}>
+            <View style={[styles.iconCircle, styles.warningCircle]}>
+                <Ionicons name="location-outline" size={48} color="#FFFFFF" />
             </View>
-            
-            <Text style={styles.title}>Enter Your Zip Code</Text>
-            
+
+            <Text style={styles.title}>No Problem!</Text>
+
             <Text style={styles.description}>
-                We'll use this to show you events in your area. You can change this anytime in your profile settings.
+                You can still use Smashing Wallets without location access, but some features may be limited.
+                {'\n\n'}
+                You can enable location access later in your device settings.
             </Text>
 
-            <TextInput
-                style={styles.zipInput}
-                placeholder="Enter 5-digit zip code"
-                placeholderTextColor={COLORS.textTertiary}
-                value={zipCode}
-                onChangeText={setZipCode}
-                keyboardType="number-pad"
-                maxLength={5}
-                autoFocus
-            />
-
-            <TouchableOpacity 
-                style={[
-                    styles.primaryButton,
-                    zipCode.length !== 5 && styles.buttonDisabled
-                ]}
-                onPress={handleSaveZipCode}
-                disabled={loading || zipCode.length !== 5}
+            <TouchableOpacity
+                style={styles.primaryButton}
+                onPress={handleRequestLocation}
             >
-                {loading ? (
-                    <ActivityIndicator color={COLORS.buttonPrimaryText} />
-                ) : (
-                    <Text style={styles.primaryButtonText}>Continue</Text>
-                )}
+                <Text style={styles.primaryButtonText}>Try Location Again</Text>
+                <Ionicons name="navigate" size={20} color={COLORS.buttonPrimaryText} />
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
                 style={styles.secondaryButton}
-                onPress={() => setStep('location')}
-                disabled={loading}
+                onPress={handleDeniedContinue}
             >
-                <Text style={styles.secondaryButtonText}>← Use Device Location Instead</Text>
+                <Text style={styles.secondaryButtonText}>Continue Without Location</Text>
             </TouchableOpacity>
-        </KeyboardAvoidingView>
+        </View>
     )
 
     const renderComplete = () => (
         <View style={styles.stepContainer}>
             <View style={[styles.iconCircle, styles.successCircle]}>
-                <Ionicons name="checkmark" size={48} color="#FFFFFF" />
+                <Ionicons name="rocket-outline" size={48} color="#FFFFFF" />
             </View>
             
             <Text style={styles.title}>You're All Set!</Text>
@@ -262,6 +236,14 @@ const OnboardingModal = ({ onComplete }) => {
             <Text style={styles.description}>
                 Start exploring local events and find great deals in your area.
             </Text>
+
+            <TouchableOpacity 
+                style={styles.primaryButton}
+                onPress={handleClose}
+            >
+                <Text style={styles.primaryButtonText}>Start Exploring</Text>
+                <Ionicons name="arrow-forward" size={20} color={COLORS.buttonPrimaryText} />
+            </TouchableOpacity>
         </View>
     )
 
@@ -280,14 +262,15 @@ const OnboardingModal = ({ onComplete }) => {
                 <View style={styles.modal}>
                     {step === 'welcome' && renderWelcome()}
                     {step === 'location' && renderLocation()}
-                    {step === 'manual' && renderManual()}
+                    {step === 'permissionGranted' && renderPermissionGranted()}
+                    {step === 'permissionDenied' && renderPermissionDenied()}
                     {step === 'complete' && renderComplete()}
                     
-                    {/* Progress dots */}
-                    {step !== 'complete' && (
+                    {/* Progress dots - show for first 2 steps only */}
+                    {(step === 'welcome' || step === 'location') && (
                         <View style={styles.progressDots}>
                             <View style={[styles.dot, step === 'welcome' && styles.dotActive]} />
-                            <View style={[styles.dot, (step === 'location' || step === 'manual') && styles.dotActive]} />
+                            <View style={[styles.dot, step === 'location' && styles.dotActive]} />
                         </View>
                     )}
                 </View>
@@ -332,6 +315,9 @@ const styles = StyleSheet.create({
     },
     successCircle: {
         backgroundColor: COLORS.success || '#22C55E',
+    },
+    warningCircle: {
+        backgroundColor: COLORS.warning || '#F59E0B',
     },
     title: {
         fontSize: 24,
@@ -379,9 +365,6 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: COLORS.buttonPrimaryText,
     },
-    buttonDisabled: {
-        opacity: 0.5,
-    },
     secondaryButton: {
         paddingVertical: SPACING.md,
     },
@@ -389,20 +372,6 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: COLORS.primary,
         fontWeight: '500',
-    },
-    zipInput: {
-        width: '100%',
-        backgroundColor: COLORS.surface,
-        borderWidth: 2,
-        borderColor: COLORS.border,
-        borderRadius: RADIUS.md,
-        padding: SPACING.lg,
-        fontSize: 24,
-        fontWeight: 'bold',
-        textAlign: 'center',
-        color: COLORS.text,
-        marginBottom: SPACING.lg,
-        letterSpacing: 8,
     },
     progressDots: {
         flexDirection: 'row',
