@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
     View,
     StyleSheet,
@@ -11,19 +11,39 @@ import {
     Dimensions,
     ScrollView,
 } from 'react-native'
-import MapView, { Marker, Circle } from 'react-native-maps'
+import MapView, { Marker } from 'react-native-maps'
 import { router } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import * as Location from 'expo-location'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+// useFocusEffect re-runs every time this screen becomes visible.
+// This is the key fix — useEffect with [] only fires on mount,
+// but in a tab navigator the screen stays mounted when you switch tabs.
+// useFocusEffect fires on mount AND every time you navigate back to this tab.
+import { useFocusEffect } from '@react-navigation/native'
 
 import { useListings } from '../../contexts/ListingsContext'
+import googlePlacesService from '../../lib/googlePlacesService'
 import { useAuth } from '../../contexts/AuthContext'
 import { COLORS, SPACING, RADIUS, SHADOWS } from '../../constants/Colors'
 import { EVENT_TYPES, EVENT_TYPE_LABELS, EVENT_TYPE_ICONS } from '../../lib/appwrite'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
 
-// Custom map style to hide default POIs
+// ─────────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────────
+
+// Fallback location (Phoenix, AZ) used when we can't get device location
+const DEFAULT_LOCATION = {
+    latitude: 33.4484,
+    longitude: -112.0740,
+    latitudeDelta: 0.15,
+    longitudeDelta: 0.15,
+}
+
+// Custom map style to hide default Google Maps POIs so our
+// event markers are the only points of interest visible
 const CUSTOM_MAP_STYLE = [
     {
         "featureType": "poi",
@@ -65,56 +85,76 @@ const CUSTOM_MAP_STYLE = [
     }
 ]
 
-// Color mapping for event types
+// Each event type gets its own color for map markers and filter pills
 const EVENT_TYPE_COLORS = {
-    [EVENT_TYPES.YARD_SALE]: '#22C55E',      // Green
-    [EVENT_TYPES.GARAGE_SALE]: '#3B82F6',    // Blue
-    [EVENT_TYPES.ESTATE_SALE]: '#8B5CF6',    // Purple
-    [EVENT_TYPES.BAKE_SALE]: '#F59E0B',      // Orange
-    [EVENT_TYPES.CRAFT_FAIR]: '#EC4899',     // Pink
-    [EVENT_TYPES.FARMERS_MARKET]: '#10B981', // Teal
-    [EVENT_TYPES.FLEA_MARKET]: '#6366F1',    // Indigo
-    [EVENT_TYPES.SWAP_MEET]: '#EF4444',      // Red
-    [EVENT_TYPES.BOOK_SALE]: '#0EA5E9',      // Sky Blue
-    [EVENT_TYPES.OTHER]: '#6B7280',          // Gray
+    [EVENT_TYPES.YARD_SALE]: '#22C55E',
+    [EVENT_TYPES.GARAGE_SALE]: '#3B82F6',
+    [EVENT_TYPES.ESTATE_SALE]: '#8B5CF6',
+    [EVENT_TYPES.BAKE_SALE]: '#F59E0B',
+    [EVENT_TYPES.CRAFT_FAIR]: '#EC4899',
+    [EVENT_TYPES.FARMERS_MARKET]: '#10B981',
+    [EVENT_TYPES.FLEA_MARKET]: '#6366F1',
+    [EVENT_TYPES.SWAP_MEET]: '#EF4444',
+    [EVENT_TYPES.BOOK_SALE]: '#0EA5E9',
+    [EVENT_TYPES.OTHER]: '#6B7280',
 }
 
-// Minimum distance (in km) to move before showing "Search this area" button
-const MIN_MOVE_DISTANCE = 1 // 1km
+// How far the user must pan the map (in km) before we show "Search this area"
+const MIN_MOVE_DISTANCE = 1
+
+// ─────────────────────────────────────────────
+// COMPONENT
+// ─────────────────────────────────────────────
 
 export default function MapScreen() {
     const { listings } = useListings()
     const { user } = useAuth()
-    const [userLocation, setUserLocation] = useState(null) // User's actual GPS location
-    const [searchCenter, setSearchCenter] = useState(null) // Center point for filtering events
-    const [currentMapRegion, setCurrentMapRegion] = useState(null) // Current visible map region
+
+    // ── Location State ──
+    // userLocation: the device's actual GPS coordinates (used for distance calculations)
+    // searchCenter: the center point used to filter which events are shown (moves when user taps "Search this area")
+    // currentMapRegion: the region the map is currently displaying (controlled prop)
+    const [userLocation, setUserLocation] = useState(null)
+    const [searchCenter, setSearchCenter] = useState(null)
+    const [currentMapRegion, setCurrentMapRegion] = useState(DEFAULT_LOCATION)
+
+    // Controls the loading spinner vs map display
     const [loading, setLoading] = useState(true)
-    const [searchRadius, setSearchRadius] = useState(10) // in miles by default
-    const [selectedEvent, setSelectedEvent] = useState(null)
-    const [filterModalVisible, setFilterModalVisible] = useState(false)
+
+    // ── Filter State ──
+    const [searchRadius, setSearchRadius] = useState(10)
     const [selectedEventType, setSelectedEventType] = useState(null)
     const [showPastEvents, setShowPastEvents] = useState(false)
+
+    // ── UI State ──
+    const [selectedEvent, setSelectedEvent] = useState(null)
+    const [filterModalVisible, setFilterModalVisible] = useState(false)
     const [showSearchButton, setShowSearchButton] = useState(false)
-    
-    const mapRef = useRef(null)
-    const cardAnimation = useRef(new Animated.Value(0)).current
-    const searchButtonAnimation = useRef(new Animated.Value(0)).current
     const [clusterModalVisible, setClusterModalVisible] = useState(false)
     const [clusterEvents, setClusterEvents] = useState([])
 
-    // Get user's distance unit preference (default to miles)
+    // ── Refs ──
+    const mapRef = useRef(null)
+    const cardAnimation = useRef(new Animated.Value(0)).current
+    const searchButtonAnimation = useRef(new Animated.Value(0)).current
+
+    // ── User Preferences ──
+    // Distance unit from user profile (default miles)
     const distanceUnit = user?.prefs?.distanceUnit || 'miles'
-    
-    // Convert between miles and km
+
+    // ─────────────────────────────────────────────
+    // UNIT CONVERSION HELPERS
+    // ─────────────────────────────────────────────
+
     const milesToKm = (miles) => miles * 1.60934
     const kmToMiles = (km) => km / 1.60934
-    
-    // Get radius in km for calculations (internal always uses km)
+
+    // Internal calculations always use km; this converts searchRadius to km
     const getRadiusInKm = () => {
         return distanceUnit === 'miles' ? milesToKm(searchRadius) : searchRadius
     }
-    
-    // Format distance for display based on user preference
+
+    // Format a km distance for display in the user's preferred unit
     const formatDistance = (distanceInKm) => {
         if (distanceUnit === 'miles') {
             const miles = kmToMiles(distanceInKm)
@@ -129,138 +169,147 @@ export default function MapScreen() {
             return `${distanceInKm.toFixed(1)} km away`
         }
     }
-    
-    // Get unit label
+
     const getUnitLabel = () => distanceUnit === 'miles' ? 'mi' : 'km'
 
-    // Calculate distance between two points
+    // ─────────────────────────────────────────────
+    // HAVERSINE DISTANCE CALCULATION
+    // ─────────────────────────────────────────────
+    // Returns distance in km between two lat/lng points
     const calculateDistance = (lat1, lon1, lat2, lon2) => {
         const R = 6371 // Earth's radius in km
         const dLat = (lat2 - lat1) * Math.PI / 180
         const dLon = (lon2 - lon1) * Math.PI / 180
-        const a = 
-            Math.sin(dLat/2) * Math.sin(dLat/2) +
+        const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
             Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon/2) * Math.sin(dLon/2)
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+            Math.sin(dLon / 2) * Math.sin(dLon / 2)
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
         return R * c
     }
 
+    // ─────────────────────────────────────────────
+    // LOCATION FETCHING
+    // ─────────────────────────────────────────────
+    // Tracks whether we've done the initial location fetch.
+    // On first mount we show the loading spinner; on subsequent
+    // tab focuses we just clear UI state without remounting the map.
+    const hasLoadedOnce = useRef(false)
 
-    useEffect(() => {
-    (async () => {
-        try {
-            console.log('=== LOCATION DEBUG: Starting ===');
-            
-            let { status } = await Location.requestForegroundPermissionsAsync()
-            console.log('=== LOCATION DEBUG: Permission status:', status);
-            
-            const defaultLocation = {
-                latitude: 33.4484,
-                longitude: -112.0740,
-                latitudeDelta: 0.15,
-                longitudeDelta: 0.15,
+    useFocusEffect(
+        useCallback(() => {
+            let cancelled = false
+
+            // Always reset transient UI state on focus
+            setSelectedEvent(null)
+            setShowSearchButton(false)
+
+            // Only show the loading spinner on the very first load
+            if (!hasLoadedOnce.current) {
+                setLoading(true)
             }
-            
-            if (status !== 'granted') {
-                console.log('=== LOCATION DEBUG: Permission denied, using default ===');
-                setUserLocation(defaultLocation)
-                setSearchCenter(defaultLocation)
-                setCurrentMapRegion(defaultLocation)
+
+            const applyRegion = (region) => {
+                setUserLocation(region)
+                setSearchCenter(region)
+                setCurrentMapRegion(region)
                 setLoading(false)
-                return
+                hasLoadedOnce.current = true
             }
 
-            console.log('=== LOCATION DEBUG: Getting current position... ===');
-            
-            let currentLocation = await Location.getCurrentPositionAsync({
-                accuracy: Location.Accuracy.Balanced,
-                timeout: 10000,  // Add 10 second timeout
-            })
-            
-            console.log('=== LOCATION DEBUG: Got position:', currentLocation.coords);
-            
-            const locationData = {
-                latitude: currentLocation.coords.latitude,
-                longitude: currentLocation.coords.longitude,
-                latitudeDelta: 0.15,
-                longitudeDelta: 0.15,
+            // Use saved zip coordinates, fall back to re-geocoding, then Phoenix default
+            const applyZipOrDefaults = async () => {
+                try {
+                    // First try pre-resolved coordinates saved during onboarding (onboarding currently disabled)
+                    const savedCoords = await AsyncStorage.getItem('@smashing_wallets_zip_coords')
+                    if (savedCoords) {
+                        const { latitude, longitude } = JSON.parse(savedCoords)
+                        if (latitude && longitude) {
+                            const zipRegion = {
+                                latitude,
+                                longitude,
+                                latitudeDelta: 0.15,
+                                longitudeDelta: 0.15,
+                            }
+                            if (!cancelled) applyRegion(zipRegion)
+                            return
+                        }
+                    }
+
+                    // Fallback: try geocoding the saved zip code
+                    const savedZip = await AsyncStorage.getItem('@smashing_wallets_zip')
+                    if (savedZip) {
+                        const result = await googlePlacesService.geocodeAddress(savedZip)
+                        if (result && result.latitude && result.longitude) {
+                            const zipRegion = {
+                                latitude: result.latitude,
+                                longitude: result.longitude,
+                                latitudeDelta: 0.15,
+                                longitudeDelta: 0.15,
+                            }
+                            if (!cancelled) applyRegion(zipRegion)
+                            return
+                        }
+                    }
+                } catch (error) {
+                    console.error('Zip location error:', error)
+                }
+                if (!cancelled) applyRegion(DEFAULT_LOCATION)
             }
-            
-            setUserLocation(locationData)
-            setSearchCenter(locationData)
-            setCurrentMapRegion(locationData)
-            console.log('=== LOCATION DEBUG: State updated, setting loading false ===');
-            setLoading(false)
-        } catch (error) {
-            console.error('=== LOCATION DEBUG: Error:', error);
-            const defaultLocation = {
-                latitude: 33.4484,
-                longitude: -112.0740,
-                latitudeDelta: 0.15,
-                longitudeDelta: 0.15,
+
+            const getLocation = async () => {
+                try {
+                    // Only check existing permission — the splash/onboarding screen
+                    // was responsible for requesting location access (onboarding currently disabled).
+                    const { status } = await Location.getForegroundPermissionsAsync()
+
+                    if (status !== 'granted') {
+                        if (!cancelled) await applyZipOrDefaults()
+                        return
+                    }
+
+                    const location = await Promise.race([
+                        Location.getCurrentPositionAsync({
+                            accuracy: Location.Accuracy.Balanced,
+                        }),
+                        new Promise((_, reject) =>
+                            setTimeout(() => reject(new Error('Location timeout')), 8000)
+                        ),
+                    ])
+
+                    if (!cancelled) {
+                        const userRegion = {
+                            latitude: location.coords.latitude,
+                            longitude: location.coords.longitude,
+                            latitudeDelta: 0.15,
+                            longitudeDelta: 0.15,
+                        }
+
+                        setUserLocation(userRegion)
+                        setSearchCenter(userRegion)
+                        setCurrentMapRegion(userRegion)
+                        setLoading(false)
+                        hasLoadedOnce.current = true
+                    }
+                } catch (error) {
+                    console.error('Location error:', error)
+                    if (!cancelled) await applyZipOrDefaults()
+                }
             }
-            setUserLocation(defaultLocation)
-            setSearchCenter(defaultLocation)
-            setCurrentMapRegion(defaultLocation)
-            setLoading(false)
-        }
-    })()
-}, [])
 
-    // // Get user location
-    // useEffect(() => {
-    //     (async () => {
-    //         try {
-    //             let { status } = await Location.requestForegroundPermissionsAsync()
-                
-    //             const defaultLocation = {
-    //                 latitude: 33.4484,
-    //                 longitude: -112.0740,
-    //                 latitudeDelta: 0.15,
-    //                 longitudeDelta: 0.15,
-    //             }
-                
-    //             if (status !== 'granted') {
-    //                 setUserLocation(defaultLocation)
-    //                 setSearchCenter(defaultLocation)
-    //                 setCurrentMapRegion(defaultLocation)
-    //                 setLoading(false)
-    //                 return
-    //             }
+            getLocation()
 
-    //             let currentLocation = await Location.getCurrentPositionAsync({
-    //                 accuracy: Location.Accuracy.Balanced,
-    //             })
-                
-    //             const locationData = {
-    //                 latitude: currentLocation.coords.latitude,
-    //                 longitude: currentLocation.coords.longitude,
-    //                 latitudeDelta: 0.15,
-    //                 longitudeDelta: 0.15,
-    //             }
-                
-    //             setUserLocation(locationData)
-    //             setSearchCenter(locationData)
-    //             setCurrentMapRegion(locationData)
-    //             setLoading(false)
-    //         } catch (error) {
-    //             console.error('Location error:', error)
-    //             const defaultLocation = {
-    //                 latitude: 33.4484,
-    //                 longitude: -112.0740,
-    //                 latitudeDelta: 0.15,
-    //                 longitudeDelta: 0.15,
-    //             }
-    //             setUserLocation(defaultLocation)
-    //             setSearchCenter(defaultLocation)
-    //             setCurrentMapRegion(defaultLocation)
-    //             setLoading(false)
-    //         }
-    //     })()
-    // }, [])
+            return () => {
+                cancelled = true
+            }
+        }, [])
+    )
 
-    // Animate card in/out
+    // ─────────────────────────────────────────────
+    // ANIMATIONS
+    // ─────────────────────────────────────────────
+
+    // Animate the event preview card sliding up/down when an event is selected/deselected
     useEffect(() => {
         Animated.spring(cardAnimation, {
             toValue: selectedEvent ? 1 : 0,
@@ -270,7 +319,7 @@ export default function MapScreen() {
         }).start()
     }, [selectedEvent])
 
-    // Animate search button in/out
+    // Animate the "Search this area" button appearing/disappearing
     useEffect(() => {
         Animated.spring(searchButtonAnimation, {
             toValue: showSearchButton ? 1 : 0,
@@ -280,133 +329,71 @@ export default function MapScreen() {
         }).start()
     }, [showSearchButton])
 
-    // Handle region change complete - check if we should show search button
+    // ─────────────────────────────────────────────
+    // MAP INTERACTION HANDLERS
+    // ─────────────────────────────────────────────
+
+    // Called when the user finishes panning/zooming the map.
+    // If they've moved far enough from the search center, show the "Search this area" button.
     const handleRegionChangeComplete = (region) => {
         setCurrentMapRegion(region)
-        
+
         if (!searchCenter) return
-        
-        // Calculate distance from search center to new map center
+
         const distanceMoved = calculateDistance(
             searchCenter.latitude,
             searchCenter.longitude,
             region.latitude,
             region.longitude
         )
-        
-        // Show button if moved more than threshold
-        if (distanceMoved > MIN_MOVE_DISTANCE) {
-            setShowSearchButton(true)
-        } else {
-            setShowSearchButton(false)
-        }
+
+        setShowSearchButton(distanceMoved > MIN_MOVE_DISTANCE)
     }
 
-    // Handle "Search this area" button press
+    // When the user taps "Search this area", update the search center
+    // to wherever they've panned the map, which re-filters the events
     const handleSearchThisArea = () => {
         if (!currentMapRegion) return
-        
-        // Update search center to current map center
+
         setSearchCenter({
             latitude: currentMapRegion.latitude,
             longitude: currentMapRegion.longitude,
             latitudeDelta: currentMapRegion.latitudeDelta,
             longitudeDelta: currentMapRegion.longitudeDelta,
         })
-        
-        // Hide the button
+
         setShowSearchButton(false)
-        
-        // Deselect any selected event
         setSelectedEvent(null)
     }
 
-    // Filter events based on search center
-    const filteredEvents = useMemo(() => {
-        if (!searchCenter) return []
-        
-        const radiusInKm = getRadiusInKm()
-        
-        let filtered = listings.filter(event => {
-            // Must have coordinates
-            if (!event.latitude || !event.longitude) return false
-            
-            // Filter by distance from SEARCH CENTER (not user location)
-            const distance = calculateDistance(
-                searchCenter.latitude,
-                searchCenter.longitude,
-                event.latitude,
-                event.longitude
-            )
-            if (distance > radiusInKm) return false
-            
-            // Filter by event type
-            if (selectedEventType && event.eventType !== selectedEventType) return false
-            
-            // Filter past events
-            if (!showPastEvents) {
-                const today = new Date().toISOString().split('T')[0]
-                const eventDate = (event.date || event.startDate || '').split('T')[0]
-                if (eventDate && eventDate < today) return false
-            }
-            
-            return true
-        })
-        
-        return filtered
-    }, [listings, searchCenter, searchRadius, selectedEventType, showPastEvents, distanceUnit])
+    // Tap on the map background = deselect any selected event
+    const handleMapPress = () => {
+        setSelectedEvent(null)
+    }
 
-    // Cluster nearby events (within ~50 meters of each other)
-    const clusteredEvents = useMemo(() => {
-        const CLUSTER_DISTANCE = 0.05 // ~50 meters in km
-        const clusters = []
-        const processed = new Set()
-        
-        filteredEvents.forEach((event, index) => {
-            if (processed.has(event.$id)) return
-            
-            // Find all events near this one
-            const nearbyEvents = filteredEvents.filter((otherEvent, otherIndex) => {
-                if (processed.has(otherEvent.$id)) return false
-                if (event.$id === otherEvent.$id) return true
-                
-                const distance = calculateDistance(
-                    event.latitude,
-                    event.longitude,
-                    otherEvent.latitude,
-                    otherEvent.longitude
-                )
-                return distance < CLUSTER_DISTANCE
-            })
-            
-            // Mark all as processed
-            nearbyEvents.forEach(e => processed.add(e.$id))
-            
-            // Create cluster
-            clusters.push({
-                id: event.$id,
-                latitude: event.latitude,
-                longitude: event.longitude,
-                events: nearbyEvents,
-                count: nearbyEvents.length,
-                eventType: event.eventType
-            })
-        })
-        
-        return clusters
-    }, [filteredEvents])
+    // Re-center map on the user's actual GPS location
+    const handleRecenter = () => {
+        if (mapRef.current && userLocation) {
+            mapRef.current.animateToRegion(userLocation, 500)
+            setSearchCenter(userLocation)
+            setShowSearchButton(false)
+        }
+        setSelectedEvent(null)
+    }
 
-    // Handle marker press
+    // ─────────────────────────────────────────────
+    // MARKER / CLUSTER HANDLERS
+    // ─────────────────────────────────────────────
+
+    // When a marker is tapped: if it's a cluster (multiple events), show the
+    // cluster modal. If it's a single event, show the preview card.
     const handleMarkerPress = (cluster) => {
         if (cluster.count > 1) {
-            // Multiple events - show cluster modal
             setClusterEvents(cluster.events)
             setClusterModalVisible(true)
         } else {
-            // Single event - show preview card
             setSelectedEvent(cluster.events[0])
-            
-            // Center map on selected marker
+
             if (mapRef.current) {
                 mapRef.current.animateToRegion({
                     latitude: cluster.latitude,
@@ -417,12 +404,12 @@ export default function MapScreen() {
             }
         }
     }
-    
-    // Handle selecting event from cluster
+
+    // User picks a specific event from the cluster modal
     const handleClusterEventSelect = (event) => {
         setClusterModalVisible(false)
         setSelectedEvent(event)
-        
+
         if (mapRef.current) {
             mapRef.current.animateToRegion({
                 latitude: event.latitude,
@@ -433,7 +420,7 @@ export default function MapScreen() {
         }
     }
 
-    // Handle card press - navigate to details
+    // Tapping the preview card navigates to the full event details screen
     const handleCardPress = () => {
         if (selectedEvent) {
             router.push({
@@ -443,64 +430,51 @@ export default function MapScreen() {
         }
     }
 
-    // Handle map press - deselect
-    const handleMapPress = () => {
-        setSelectedEvent(null)
-    }
+    // ─────────────────────────────────────────────
+    // FILTER HANDLERS
+    // ─────────────────────────────────────────────
 
-    // Recenter on user location
-    const handleRecenter = () => {
-        if (mapRef.current && userLocation) {
-            mapRef.current.animateToRegion(userLocation, 500)
-            
-            // Also update search center to user location
-            setSearchCenter(userLocation)
-            setShowSearchButton(false)
-        }
-        setSelectedEvent(null)
-    }
-
-    // Handle filter pill press
+    // Toggle a filter pill on/off
     const handleFilterPillPress = (eventType) => {
-        if (selectedEventType === eventType) {
-            setSelectedEventType(null)
-        } else {
-            setSelectedEventType(eventType)
-        }
+        setSelectedEventType(
+            selectedEventType === eventType ? null : eventType
+        )
     }
 
-    // Format date for display
+    // ─────────────────────────────────────────────
+    // FORMATTING HELPERS
+    // ─────────────────────────────────────────────
+
     const formatDate = (dateString) => {
         if (!dateString) return ''
         const date = new Date(dateString + 'T00:00:00')
-        return date.toLocaleDateString('en-US', { 
+        return date.toLocaleDateString('en-US', {
             weekday: 'short',
-            month: 'short', 
-            day: 'numeric' 
+            month: 'short',
+            day: 'numeric'
         })
     }
 
-    // Get distance and ETA text
+    // Calculate distance and estimated driving time from user's location to an event
     const getDistanceETAText = (event) => {
         if (!userLocation || !event.latitude || !event.longitude) return { distance: '', eta: '' }
+
         const distanceInKm = calculateDistance(
             userLocation.latitude,
             userLocation.longitude,
             event.latitude,
             event.longitude
         )
-        
-        // Calculate ETA (assume ~25 mph city driving)
+
+        // Rough ETA: ~25mph city, ~55mph highway after 5 miles
         const distanceMiles = kmToMiles(distanceInKm)
         let etaMinutes
         if (distanceMiles < 10) {
             etaMinutes = (distanceMiles / 25) * 60
         } else {
-            // First 5 miles at city speed, rest at highway
             etaMinutes = ((5 / 25) + ((distanceMiles - 5) / 55)) * 60
         }
-        
-        // Format ETA
+
         let etaText
         if (etaMinutes < 1) {
             etaText = '< 1 min'
@@ -511,18 +485,94 @@ export default function MapScreen() {
             const mins = Math.round(etaMinutes % 60)
             etaText = mins === 0 ? `${hours} hr` : `${hours} hr ${mins} min`
         }
-        
+
         return {
             distance: formatDistance(distanceInKm),
             eta: etaText
         }
     }
 
-    console.log('=== RENDER DEBUG ===');
-    console.log('loading:', loading);
-    console.log('userLocation:', userLocation);
-    console.log('====================');
+    // ─────────────────────────────────────────────
+    // EVENT FILTERING (memoized for performance)
+    // ─────────────────────────────────────────────
+    // Recalculates only when dependencies change, not on every render
+    const filteredEvents = useMemo(() => {
+        if (!searchCenter) return []
 
+        const radiusInKm = getRadiusInKm()
+
+        return listings.filter(event => {
+            // Must have coordinates to show on map
+            if (!event.latitude || !event.longitude) return false
+
+            // Filter by distance from search center
+            const distance = calculateDistance(
+                searchCenter.latitude,
+                searchCenter.longitude,
+                event.latitude,
+                event.longitude
+            )
+            if (distance > radiusInKm) return false
+
+            // Filter by event type if one is selected
+            if (selectedEventType && event.eventType !== selectedEventType) return false
+
+            // Hide past events unless toggled on
+            if (!showPastEvents) {
+                const today = new Date().toISOString().split('T')[0]
+                const eventDate = (event.date || event.startDate || '').split('T')[0]
+                if (eventDate && eventDate < today) return false
+            }
+
+            return true
+        })
+    }, [listings, searchCenter, searchRadius, selectedEventType, showPastEvents, distanceUnit])
+
+    // ─────────────────────────────────────────────
+    // EVENT CLUSTERING (memoized)
+    // ─────────────────────────────────────────────
+    // Groups events within ~50 meters of each other into a single marker
+    // so the map doesn't get cluttered with overlapping pins
+    const clusteredEvents = useMemo(() => {
+        const CLUSTER_DISTANCE = 0.05 // ~50 meters in km
+        const clusters = []
+        const processed = new Set()
+
+        filteredEvents.forEach((event) => {
+            if (processed.has(event.$id)) return
+
+            // Find all events near this one that haven't been clustered yet
+            const nearbyEvents = filteredEvents.filter((otherEvent) => {
+                if (processed.has(otherEvent.$id)) return false
+                if (event.$id === otherEvent.$id) return true
+
+                const distance = calculateDistance(
+                    event.latitude,
+                    event.longitude,
+                    otherEvent.latitude,
+                    otherEvent.longitude
+                )
+                return distance < CLUSTER_DISTANCE
+            })
+
+            nearbyEvents.forEach(e => processed.add(e.$id))
+
+            clusters.push({
+                id: event.$id,
+                latitude: event.latitude,
+                longitude: event.longitude,
+                events: nearbyEvents,
+                count: nearbyEvents.length,
+                eventType: event.eventType
+            })
+        })
+
+        return clusters
+    }, [filteredEvents])
+
+    // ─────────────────────────────────────────────
+    // LOADING STATE
+    // ─────────────────────────────────────────────
     if (loading) {
         return (
             <View style={styles.loadingContainer}>
@@ -532,24 +582,20 @@ export default function MapScreen() {
         )
     }
 
-    if (!userLocation) {
-        return (
-            <View style={styles.loadingContainer}>
-                <Ionicons name="location-outline" size={48} color={COLORS.textTertiary} />
-                <Text style={styles.errorText}>Location not available</Text>
-                <Text style={styles.errorSubtext}>Please enable location services</Text>
-            </View>
-        )
-    }
-
+    // ─────────────────────────────────────────────
+    // MAIN RENDER
+    // ─────────────────────────────────────────────
     return (
         <View style={styles.container}>
-            {/* Map */}
+            {/* ── Map ── */}
+            {/* Using initialRegion (uncontrolled) — the loading state unmounts/remounts
+                MapView on each focus, so initialRegion applies the fresh location each time.
+                Programmatic moves use mapRef.animateToRegion(). */}
             <MapView
                 ref={mapRef}
                 style={styles.map}
                 provider="google"
-                initialRegion={userLocation}
+                initialRegion={currentMapRegion}
                 showsUserLocation={true}
                 showsMyLocationButton={false}
                 onPress={handleMapPress}
@@ -561,7 +607,7 @@ export default function MapScreen() {
                     const isSelected = cluster.count === 1 && selectedEvent?.$id === cluster.events[0].$id
                     const markerColor = EVENT_TYPE_COLORS[cluster.eventType] || COLORS.primary
                     const iconName = EVENT_TYPE_ICONS[cluster.eventType] || 'calendar-outline'
-                    
+
                     return (
                         <Marker
                             key={cluster.id}
@@ -585,10 +631,10 @@ export default function MapScreen() {
                                             { color: markerColor }
                                         ]}>{cluster.count}</Text>
                                     ) : (
-                                        <Ionicons 
-                                            name={iconName} 
-                                            size={isSelected ? 20 : 16} 
-                                            color={isSelected ? '#FFFFFF' : markerColor} 
+                                        <Ionicons
+                                            name={iconName}
+                                            size={isSelected ? 20 : 16}
+                                            color={isSelected ? '#FFFFFF' : markerColor}
                                         />
                                     )}
                                 </View>
@@ -606,7 +652,7 @@ export default function MapScreen() {
                 })}
             </MapView>
 
-            {/* Header with Filter Pills */}
+            {/* ── Header with Filter Pills ── */}
             <View style={styles.headerContainer}>
                 <View style={styles.header}>
                     <View style={styles.headerTop}>
@@ -624,10 +670,10 @@ export default function MapScreen() {
                         </TouchableOpacity>
                     </View>
                 </View>
-                
-                {/* Filter Pills */}
-                <ScrollView 
-                    horizontal 
+
+                {/* Horizontally scrollable filter pills */}
+                <ScrollView
+                    horizontal
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.filterPillsContainer}
                 >
@@ -643,7 +689,7 @@ export default function MapScreen() {
                             !selectedEventType && styles.filterPillTextActive
                         ]}>All</Text>
                     </TouchableOpacity>
-                    
+
                     {Object.entries(EVENT_TYPE_LABELS).map(([key, label]) => (
                         <TouchableOpacity
                             key={key}
@@ -668,19 +714,18 @@ export default function MapScreen() {
                 </ScrollView>
             </View>
 
-            {/* Search This Area Button */}
+            {/* ── Search This Area Button ── */}
+            {/* Slides down from top when user pans the map far enough from the search center */}
             <Animated.View
                 style={[
                     styles.searchAreaButtonContainer,
                     {
-                        transform: [
-                            {
-                                translateY: searchButtonAnimation.interpolate({
-                                    inputRange: [0, 1],
-                                    outputRange: [-100, 0],
-                                })
-                            }
-                        ],
+                        transform: [{
+                            translateY: searchButtonAnimation.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [-100, 0],
+                            })
+                        }],
                         opacity: searchButtonAnimation,
                     }
                 ]}
@@ -696,7 +741,7 @@ export default function MapScreen() {
                 </TouchableOpacity>
             </Animated.View>
 
-            {/* Center on Me Button - Bottom Right */}
+            {/* ── Center on Me Button ── */}
             <TouchableOpacity
                 style={styles.centerButton}
                 onPress={handleRecenter}
@@ -704,26 +749,25 @@ export default function MapScreen() {
                 <Ionicons name="locate" size={24} color={COLORS.primary} />
             </TouchableOpacity>
 
-            {/* Event Preview Card */}
-            <Animated.View 
+            {/* ── Event Preview Card ── */}
+            {/* Slides up from bottom when an event marker is tapped */}
+            <Animated.View
                 style={[
                     styles.previewCard,
                     {
-                        transform: [
-                            {
-                                translateY: cardAnimation.interpolate({
-                                    inputRange: [0, 1],
-                                    outputRange: [200, 0],
-                                })
-                            }
-                        ],
+                        transform: [{
+                            translateY: cardAnimation.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [200, 0],
+                            })
+                        }],
                         opacity: cardAnimation,
                     }
                 ]}
                 pointerEvents={selectedEvent ? 'auto' : 'none'}
             >
                 {selectedEvent && (
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.previewCardContent}
                         onPress={handleCardPress}
                         activeOpacity={0.9}
@@ -733,10 +777,10 @@ export default function MapScreen() {
                             styles.eventTypeBadge,
                             { backgroundColor: EVENT_TYPE_COLORS[selectedEvent.eventType] || COLORS.primary }
                         ]}>
-                            <Ionicons 
-                                name={EVENT_TYPE_ICONS[selectedEvent.eventType] || 'calendar-outline'} 
-                                size={12} 
-                                color={COLORS.buttonPrimaryText} 
+                            <Ionicons
+                                name={EVENT_TYPE_ICONS[selectedEvent.eventType] || 'calendar-outline'}
+                                size={12}
+                                color={COLORS.buttonPrimaryText}
                             />
                             <Text style={styles.eventTypeBadgeText}>
                                 {EVENT_TYPE_LABELS[selectedEvent.eventType] || 'Event'}
@@ -748,7 +792,7 @@ export default function MapScreen() {
                             {selectedEvent.title}
                         </Text>
 
-                        {/* Info Row */}
+                        {/* Info Row: date, time, distance, ETA */}
                         <View style={styles.previewInfoRow}>
                             <View style={styles.previewInfoItem}>
                                 <Ionicons name="calendar-outline" size={14} color={COLORS.textSecondary} />
@@ -756,7 +800,7 @@ export default function MapScreen() {
                                     {formatDate(selectedEvent.date || selectedEvent.startDate)}
                                 </Text>
                             </View>
-                            
+
                             {selectedEvent.startTime && (
                                 <View style={styles.previewInfoItem}>
                                     <Ionicons name="time-outline" size={14} color={COLORS.textSecondary} />
@@ -765,14 +809,14 @@ export default function MapScreen() {
                                     </Text>
                                 </View>
                             )}
-                            
+
                             <View style={styles.previewInfoItem}>
                                 <Ionicons name="car-outline" size={14} color={COLORS.primary} />
                                 <Text style={[styles.previewInfoText, { color: COLORS.primary }]}>
                                     {getDistanceETAText(selectedEvent).distance}
                                 </Text>
                             </View>
-                            
+
                             <View style={styles.previewInfoItem}>
                                 <Ionicons name="time" size={14} color={COLORS.primary} />
                                 <Text style={[styles.previewInfoText, { color: COLORS.primary }]}>
@@ -789,7 +833,7 @@ export default function MapScreen() {
                             </Text>
                         </View>
 
-                        {/* View Details Arrow */}
+                        {/* View Details link */}
                         <View style={styles.previewArrow}>
                             <Text style={styles.previewArrowText}>View Details</Text>
                             <Ionicons name="chevron-forward" size={16} color={COLORS.primary} />
@@ -798,14 +842,14 @@ export default function MapScreen() {
                 )}
             </Animated.View>
 
-            {/* More Filters Modal */}
+            {/* ── More Filters Modal ── */}
             <Modal
                 visible={filterModalVisible}
                 animationType="slide"
                 transparent={true}
                 onRequestClose={() => setFilterModalVisible(false)}
             >
-                <Pressable 
+                <Pressable
                     style={styles.modalOverlay}
                     onPress={() => setFilterModalVisible(false)}
                 >
@@ -831,7 +875,7 @@ export default function MapScreen() {
                                 />
                             </TouchableOpacity>
 
-                            {/* Search Radius */}
+                            {/* Search Radius Options */}
                             <View style={styles.radiusSection}>
                                 <Text style={styles.radiusSectionTitle}>Search Radius</Text>
                                 <View style={styles.radiusOptions}>
@@ -864,14 +908,15 @@ export default function MapScreen() {
                 </Pressable>
             </Modal>
 
-            {/* Cluster Events Modal */}
+            {/* ── Cluster Events Modal ── */}
+            {/* Shows a list when multiple events are at the same location */}
             <Modal
                 visible={clusterModalVisible}
                 animationType="slide"
                 transparent={true}
                 onRequestClose={() => setClusterModalVisible(false)}
             >
-                <Pressable 
+                <Pressable
                     style={styles.modalOverlay}
                     onPress={() => setClusterModalVisible(false)}
                 >
@@ -897,10 +942,10 @@ export default function MapScreen() {
                                             styles.clusterEventIcon,
                                             { backgroundColor: EVENT_TYPE_COLORS[event.eventType] || COLORS.primary }
                                         ]}>
-                                            <Ionicons 
-                                                name={EVENT_TYPE_ICONS[event.eventType] || 'calendar-outline'} 
-                                                size={16} 
-                                                color="#FFFFFF" 
+                                            <Ionicons
+                                                name={EVENT_TYPE_ICONS[event.eventType] || 'calendar-outline'}
+                                                size={16}
+                                                color="#FFFFFF"
                                             />
                                         </View>
                                         <View style={styles.clusterEventInfo}>
@@ -923,6 +968,10 @@ export default function MapScreen() {
     )
 }
 
+// ─────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────
+
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -942,17 +991,7 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: COLORS.textSecondary,
     },
-    errorText: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: COLORS.text,
-        marginTop: SPACING.md,
-    },
-    errorSubtext: {
-        fontSize: 14,
-        color: COLORS.textSecondary,
-    },
-    
+
     // Header
     headerContainer: {
         position: 'absolute',
@@ -993,7 +1032,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
-    
+
     // Filter Pills
     filterPillsContainer: {
         paddingHorizontal: SPACING.lg,
@@ -1051,7 +1090,7 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: COLORS.buttonPrimaryText,
     },
-    
+
     // Center Button
     centerButton: {
         position: 'absolute',
@@ -1065,7 +1104,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         ...SHADOWS.medium,
     },
-    
+
     // Markers
     markerContainer: {
         alignItems: 'center',
@@ -1117,7 +1156,7 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: 'bold',
     },
-    
+
     // Preview Card
     previewCard: {
         position: 'absolute',
@@ -1193,7 +1232,7 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: COLORS.primary,
     },
-    
+
     // Modal Styles
     modalOverlay: {
         flex: 1,
@@ -1276,6 +1315,7 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: COLORS.buttonPrimaryText,
     },
+
     // Cluster Modal Styles
     clusterModalContent: {
         backgroundColor: COLORS.background,

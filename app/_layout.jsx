@@ -1,10 +1,13 @@
-import { StyleSheet } from 'react-native'
+// import { useState, useEffect } from 'react'
+// import { StyleSheet, View, ActivityIndicator } from 'react-native'
 import { Tabs } from 'expo-router'
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
-import { AuthProvider } from '../contexts/AuthContext' 
-import { ListingsProvider } from '../contexts/ListingsContext' 
+// import * as Location from 'expo-location'
+import { AuthProvider } from '../contexts/AuthContext'
+import { ListingsProvider } from '../contexts/ListingsContext'
 import { SavedEventsProvider } from '../contexts/SavedEventsContext'
+// import OnboardingScreen from '../components/OnboardingScreen'
 
 const TabsLayout = () => {
     const insets = useSafeAreaInsets()
@@ -46,16 +49,6 @@ const TabsLayout = () => {
                     )
                 }}
             />
-            
-            {/* <Tabs.Screen
-                name='(tabs)'
-                options={{
-                    title:'Listings',
-                    tabBarIcon: ({ color, size }) => (
-                        <Ionicons name="list-outline" size={size} color={color} />
-                    )
-                }}
-            /> */}
 
             <Tabs.Screen
                 name='(tabs)'
@@ -76,13 +69,19 @@ const TabsLayout = () => {
                 })}
             />
 
-            <Tabs.Screen
+            {/* <Tabs.Screen
                 name='(test)'
+                // options={{
+                //     href: null,
+                //     headerShown: false
+                // }}
                 options={{
-                    href: null,
-                    headerShown: false
+                    title:'Testing',
+                    tabBarIcon: ({ color, size }) => (
+                        <Ionicons name="bug-outline" size={size} color={color} />
+                    )
                 }}
-            />
+            /> */}
 
             <Tabs.Screen
                 name="index"
@@ -95,13 +94,63 @@ const TabsLayout = () => {
     )
 }
 
+const AppContent = () => {
+    // ── Onboarding commented out for deadline ──
+    // const [isLoading, setIsLoading] = useState(true)
+    // const [showSplash, setShowSplash] = useState(false)
+    // // Key to force TabsLayout to re-mount after onboarding
+    // const [appKey, setAppKey] = useState(0)
+
+    // useEffect(() => {
+    //     checkLocationPermission()
+    // }, [])
+
+    // const checkLocationPermission = async () => {
+    //     try {
+    //         const { status } = await Location.getForegroundPermissionsAsync()
+
+    //         // If the user has granted persistent location permission,
+    //         // go straight to the app. Otherwise show the splash screen
+    //         // every time until they grant it.
+    //         setShowSplash(status !== 'granted')
+    //     } catch (error) {
+    //         console.error('Error checking location permission:', error)
+    //         setShowSplash(false)
+    //     } finally {
+    //         setIsLoading(false)
+    //     }
+    // }
+
+    // const handleSplashComplete = () => {
+    //     // Increment the key to force TabsLayout to fully re-mount
+    //     // so the Map screen picks up the new location permission
+    //     setAppKey(prevKey => prevKey + 1)
+    //     setShowSplash(false)
+    // }
+
+    // if (isLoading) {
+    //     return (
+    //         <View style={styles.loadingContainer}>
+    //             <ActivityIndicator size="large" color="#ff4133" />
+    //         </View>
+    //     )
+    // }
+
+    // if (showSplash) {
+    //     return <OnboardingScreen onComplete={handleSplashComplete} />
+    // }
+
+    // return <TabsLayout key={appKey} />
+    return <TabsLayout />
+}
+
 const RootLayout = () => {
     return (
         <SafeAreaProvider>
             <AuthProvider>
                 <SavedEventsProvider>
                     <ListingsProvider> 
-                        <TabsLayout />
+                        <AppContent />
                     </ListingsProvider>
                 </SavedEventsProvider>
             </AuthProvider>
@@ -111,4 +160,11 @@ const RootLayout = () => {
 
 export default RootLayout
 
-const styles = StyleSheet.create({})
+// const styles = StyleSheet.create({
+//     loadingContainer: {
+//         flex: 1,
+//         justifyContent: 'center',
+//         alignItems: 'center',
+//         backgroundColor: '#f8f9fa',
+//     },
+// })
