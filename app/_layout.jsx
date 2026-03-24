@@ -69,19 +69,19 @@ const TabsLayout = () => {
                 })}
             />
 
-            {/* <Tabs.Screen
+            <Tabs.Screen
                 name='(test)'
-                // options={{
-                //     href: null,
-                //     headerShown: false
-                // }}
                 options={{
-                    title:'Testing',
-                    tabBarIcon: ({ color, size }) => (
-                        <Ionicons name="bug-outline" size={size} color={color} />
-                    )
+                    href: null,
+                    headerShown: false
                 }}
-            /> */}
+                // options={{
+                //     title:'Testing',
+                //     tabBarIcon: ({ color, size }) => (
+                //         <Ionicons name="bug-outline" size={size} color={color} />
+                //     )
+                // }}
+            />
 
             <Tabs.Screen
                 name="index"

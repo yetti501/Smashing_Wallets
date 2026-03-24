@@ -14,7 +14,7 @@ export default ThemedText
 const styles = StyleSheet.create({
     textContainer: {
         color: COLORS.text,
-        paddoing: 8,
+        padding: 8,
         marginBottom: 8,
         marginTop: 20,
         position: 'relative'

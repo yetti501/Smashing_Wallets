@@ -34,7 +34,7 @@ const styles = StyleSheet.create({
         backgroundColor: COLORS.background, 
         justifyContent: 'center',
         alignItems: 'center', 
-        shadownColor: COLORS.shadow,
+        shadowColor: COLORS.shadow,
         shadowOffset: {
         width: 0,
         height: 2

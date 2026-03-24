@@ -119,7 +119,7 @@ export default function ProfileScreen() {
         )
     }
 
-    const handleEditfield = (field, currentValue) => {
+    const handleEditField = (field, currentValue) => {
         setEditField(field)
         setEditValue(currentValue || '')
         setPassword('') // Reset password field
@@ -281,13 +281,13 @@ export default function ProfileScreen() {
             </View>
 
             {/* Account Information Section */}
-            <ThemedInfoCard title="Account Information">
+            <ThemedInfoCard sectionTitle="Account Information">
                 {/* Name Field {Editable} */}
                 <ThemedInfoContent
                     infoLabel='Name'
                     infoValue={user.name}
                     hasEdit={true}
-                    onPress={() => handleEditfield('name', user.name)}
+                    onPress={() => handleEditField('name', user.name)}
                 />
 
                 {/* Email Field (Read-only) */}
@@ -302,7 +302,7 @@ export default function ProfileScreen() {
                     infoLabel="Phone"
                     infoValue={formatPhoneDisplay(user.phone)}
                     hasEdit={true}
-                    onPress={() => handleEditfield('phone', user.phone)}
+                    onPress={() => handleEditField('phone', user.phone)}
                 />
 
                 {/* Distance Unit Preference */}

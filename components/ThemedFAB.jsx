@@ -7,10 +7,10 @@ import { COLORS, SPACING } from '../constants/Colors'
  * 
  * @param {string} icon - Ionicon name(default: 'add')
  * @param {string} function - onPress - Press handler
- * @param {string} number - size - Button size (defualt: 60)
- * @param {string} number - iconSize - Icon size (defualt: 28)
- * @param {string} backgroundColor - Custom backgroun color
- * @param {string} iconColor - Custom icon colo
+ * @param {string} number - size - Button size (default: 60)
+ * @param {string} number - iconSize - Icon size (default: 28)
+ * @param {string} backgroundColor - Custom background color
+ * @param {string} iconColor - Custom icon color
  * @param {object} style - Custom style
  * @param {string} position - 'bottom-right' or 'bottom-left' or 'bottom-center'
  */

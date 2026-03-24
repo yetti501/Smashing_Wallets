@@ -187,12 +187,12 @@ return (
                 action={handleRegister}
                 buttonText={loading ? 'Creating Account...' : 'Create Account'}
                 loading={loading}
-                diabled={loading}
+                disabled={loading}
             />
 
             {/* Return to Login Page */}
             <ThemedLink
-                inputText={'Already have an acount? '}
+                inputText={'Already have an account?'}
                 link='/login'
                 linkText='Login'
                 loading={loading}

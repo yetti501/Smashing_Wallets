@@ -261,7 +261,7 @@ export const AuthProvider = ({ children }) => {
         }
     }, [])
 
-    /**x
+    /**
      * Notify all logout listeners
      */
     const notifyLogoutListeners = useCallback(() => {

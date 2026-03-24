@@ -6,7 +6,8 @@ import {
     Modal,
     TouchableOpacity,
     Alert,
-    ActivityIndicator
+    ActivityIndicator,
+    Linking,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import * as Location from 'expo-location'
@@ -46,12 +47,42 @@ const OnboardingModal = ({ onComplete }) => {
         }
     }
 
+    const markOnboardingComplete = async () => {
+        try {
+            await AsyncStorage.setItem(ONBOARDING_COMPLETE_KEY, 'true')
+        } catch (error) {
+            console.error('Error completing onboarding:', error)
+        }
+    }
+
+    const handleDeniedContinue = async () => {
+        await markOnboardingComplete()
+        setStep('complete')
+    }
+
     const handleRequestLocation = async () => {
         setLoading(true)
-        
+
         try {
+            // Check current permission status first to see if we can still ask
+            const current = await Location.getForegroundPermissionsAsync()
+
+            if (current.status === 'denied' && !current.canAskAgain) {
+                // Permission permanently denied — OS won't show the dialog again
+                setLoading(false)
+                Alert.alert(
+                    'Location Permission Required',
+                    'You previously denied location access. To enable it, please open your device settings and allow location for Smashing Wallets.',
+                    [
+                        { text: 'Open Settings', onPress: () => Linking.openSettings() },
+                        { text: 'Continue Without', onPress: () => handleDeniedContinue() },
+                    ]
+                )
+                return
+            }
+
             const { status } = await Location.requestForegroundPermissionsAsync()
-            
+
             if (status === 'granted') {
                 // Save preference
                 if (user) {
@@ -78,14 +109,6 @@ const OnboardingModal = ({ onComplete }) => {
     const handleGrantedContinue = async () => {
         await markOnboardingComplete()
         setStep('complete')
-    }
-
-    const markOnboardingComplete = async () => {
-        try {
-            await AsyncStorage.setItem(ONBOARDING_COMPLETE_KEY, 'true')
-        } catch (error) {
-            console.error('Error completing onboarding:', error)
-        }
     }
 
     const handleClose = () => {
@@ -188,11 +211,6 @@ const OnboardingModal = ({ onComplete }) => {
             </TouchableOpacity>
         </View>
     )
-
-    const handleDeniedContinue = async () => {
-        await markOnboardingComplete()
-        setStep('complete')
-    }
 
     const renderPermissionDenied = () => (
         <View style={styles.stepContainer}>

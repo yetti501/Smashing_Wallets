@@ -6,7 +6,7 @@ const ThemedSpacer = ({size}) => {
     if (size === 'small') {
         spacerStyle = styles.small
     } else if (size === 'large') {
-        spaceStyle = styles.large
+        spacerStyle = styles.large
     } 
 
     return <View style={spacerStyle} />

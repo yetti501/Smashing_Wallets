@@ -10,6 +10,7 @@ import {
     Animated,
     Dimensions,
     ScrollView,
+    AppState,
 } from 'react-native'
 import MapView, { Marker } from 'react-native-maps'
 import { router } from 'expo-router'
@@ -102,6 +103,11 @@ const EVENT_TYPE_COLORS = {
 // How far the user must pan the map (in km) before we show "Search this area"
 const MIN_MOVE_DISTANCE = 1
 
+// Module-level flag — survives component remounts (e.g. when AuthProvider
+// re-renders and the tab navigator remounts screens). Only resets when
+// the JS bundle reloads (app killed & reopened).
+let hasLoadedLocationOnce = false
+
 // ─────────────────────────────────────────────
 // COMPONENT
 // ─────────────────────────────────────────────
@@ -120,6 +126,8 @@ export default function MapScreen() {
 
     // Controls the loading spinner vs map display
     const [loading, setLoading] = useState(true)
+    // Incrementing key forces MapView to remount, creating a fresh Google Maps session
+    const [mapKey, setMapKey] = useState(0)
 
     // ── Filter State ──
     const [searchRadius, setSearchRadius] = useState(10)
@@ -137,6 +145,9 @@ export default function MapScreen() {
     const mapRef = useRef(null)
     const cardAnimation = useRef(new Animated.Value(0)).current
     const searchButtonAnimation = useRef(new Animated.Value(0)).current
+    // Track when the map was last actively viewed (for staleness detection)
+    const lastActiveTimestamp = useRef(Date.now())
+    const appStateRef = useRef(AppState.currentState)
 
     // ── User Preferences ──
     // Distance unit from user profile (default miles)
@@ -189,93 +200,138 @@ export default function MapScreen() {
     }
 
     // ─────────────────────────────────────────────
+    // APP STATE (BACKGROUND/FOREGROUND) HANDLING
+    // ─────────────────────────────────────────────
+    // When the app returns from background, force a MapView remount
+    // to get a fresh Google Maps session and prevent timeouts.
+    useEffect(() => {
+        const subscription = AppState.addEventListener('change', (nextAppState) => {
+            if (
+                appStateRef.current.match(/inactive|background/) &&
+                nextAppState === 'active'
+            ) {
+                // App has come back to foreground — remount MapView for fresh session
+                setMapKey((prev) => prev + 1)
+                lastActiveTimestamp.current = Date.now()
+            }
+            appStateRef.current = nextAppState
+        })
+
+        return () => subscription.remove()
+    }, [])
+
+    // ─────────────────────────────────────────────
     // LOCATION FETCHING
     // ─────────────────────────────────────────────
     // Tracks whether we've done the initial location fetch.
     // On first mount we show the loading spinner; on subsequent
-    // tab focuses we just clear UI state without remounting the map.
-    const hasLoadedOnce = useRef(false)
+    // tab focuses we just clear UI state and re-animate to location.
+    // hasLoadedOnce is now the module-level `hasLoadedLocationOnce`
+
+    // How long (ms) the map tab can be unfocused before we force a remount
+    const STALE_THRESHOLD = 5 * 60 * 1000 // 5 minutes
 
     useFocusEffect(
         useCallback(() => {
             let cancelled = false
+            const focusId = Date.now() // unique ID to track this specific focus cycle in logs
+
+            console.log(`[LOC ${focusId}] ── useFocusEffect fired ──`)
+            console.log(`[LOC ${focusId}] hasLoadedOnce: ${hasLoadedLocationOnce}`)
+            console.log(`[LOC ${focusId}] cancelled: ${cancelled}`)
 
             // Always reset transient UI state on focus
             setSelectedEvent(null)
             setShowSearchButton(false)
 
+            // Only remount MapView if the session is likely stale (5+ min away)
+            // or on first load. Quick tab switches just re-animate.
+            const timeSinceActive = Date.now() - lastActiveTimestamp.current
+            console.log(`[LOC ${focusId}] timeSinceActive: ${timeSinceActive}ms (threshold: ${STALE_THRESHOLD}ms)`)
+            if (timeSinceActive > STALE_THRESHOLD) {
+                console.log(`[LOC ${focusId}] Session stale — remounting MapView`)
+                setMapKey((prev) => prev + 1)
+            }
+            lastActiveTimestamp.current = Date.now()
+
             // Only show the loading spinner on the very first load
-            if (!hasLoadedOnce.current) {
+            if (!hasLoadedLocationOnce) {
+                console.log(`[LOC ${focusId}] First load — showing loading spinner`)
                 setLoading(true)
+            } else {
+                console.log(`[LOC ${focusId}] Already loaded once — skipping loading spinner`)
             }
 
-            const applyRegion = (region) => {
+            const applyRegion = (region, source) => {
+                console.log(`[LOC ${focusId}] applyRegion called (source: ${source})`, JSON.stringify(region))
+                console.log(`[LOC ${focusId}] cancelled at applyRegion: ${cancelled}`)
                 setUserLocation(region)
                 setSearchCenter(region)
                 setCurrentMapRegion(region)
                 setLoading(false)
-                hasLoadedOnce.current = true
-            }
-
-            // Use saved zip coordinates, fall back to re-geocoding, then Phoenix default
-            const applyZipOrDefaults = async () => {
-                try {
-                    // First try pre-resolved coordinates saved during onboarding (onboarding currently disabled)
-                    const savedCoords = await AsyncStorage.getItem('@smashing_wallets_zip_coords')
-                    if (savedCoords) {
-                        const { latitude, longitude } = JSON.parse(savedCoords)
-                        if (latitude && longitude) {
-                            const zipRegion = {
-                                latitude,
-                                longitude,
-                                latitudeDelta: 0.15,
-                                longitudeDelta: 0.15,
-                            }
-                            if (!cancelled) applyRegion(zipRegion)
-                            return
-                        }
-                    }
-
-                    // Fallback: try geocoding the saved zip code
-                    const savedZip = await AsyncStorage.getItem('@smashing_wallets_zip')
-                    if (savedZip) {
-                        const result = await googlePlacesService.geocodeAddress(savedZip)
-                        if (result && result.latitude && result.longitude) {
-                            const zipRegion = {
-                                latitude: result.latitude,
-                                longitude: result.longitude,
-                                latitudeDelta: 0.15,
-                                longitudeDelta: 0.15,
-                            }
-                            if (!cancelled) applyRegion(zipRegion)
-                            return
-                        }
-                    }
-                } catch (error) {
-                    console.error('Zip location error:', error)
-                }
-                if (!cancelled) applyRegion(DEFAULT_LOCATION)
+                hasLoadedLocationOnce = true
             }
 
             const getLocation = async () => {
+                console.log(`[LOC ${focusId}] getLocation() started`)
+
                 try {
-                    // Only check existing permission — the splash/onboarding screen
-                    // was responsible for requesting location access (onboarding currently disabled).
-                    const { status } = await Location.getForegroundPermissionsAsync()
+                    // Check current permission status first (instant, no system dialog)
+                    console.log(`[LOC ${focusId}] Checking foreground permissions...`)
+                    let { status } = await Location.getForegroundPermissionsAsync()
+                    console.log(`[LOC ${focusId}] Current permission status: "${status}"`)
+
+                    // Only show the system request dialog if not yet granted
+                    if (status !== 'granted') {
+                        console.log(`[LOC ${focusId}] Not granted — requesting permission...`)
+                        const response = await Location.requestForegroundPermissionsAsync()
+                        status = response.status
+                        console.log(`[LOC ${focusId}] Request result: "${status}"`)
+                    }
 
                     if (status !== 'granted') {
-                        if (!cancelled) await applyZipOrDefaults()
+                        console.log(`[LOC ${focusId}] Permission denied — falling back to DEFAULT_LOCATION`)
+                        if (!cancelled) applyRegion(DEFAULT_LOCATION, 'permission-denied')
                         return
                     }
 
-                    const location = await Promise.race([
-                        Location.getCurrentPositionAsync({
-                            accuracy: Location.Accuracy.Balanced,
-                        }),
-                        new Promise((_, reject) =>
-                            setTimeout(() => reject(new Error('Location timeout')), 8000)
-                        ),
-                    ])
+                    // Try cached location first (instant), fall back to fresh GPS
+                    console.log(`[LOC ${focusId}] Trying getLastKnownPositionAsync...`)
+                    const startTime = Date.now()
+                    let location = null
+
+                    const lastKnown = await Location.getLastKnownPositionAsync()
+                    if (lastKnown) {
+                        const ageMs = Date.now() - lastKnown.timestamp
+                        console.log(`[LOC ${focusId}] lastKnown found, age: ${Math.round(ageMs / 1000)}s, coords: ${lastKnown.coords.latitude}, ${lastKnown.coords.longitude}`)
+                        // Use cached position if it's less than 2 minutes old
+                        if (ageMs < 120000) {
+                            console.log(`[LOC ${focusId}] Using cached position (fresh enough)`)
+                            location = lastKnown
+                        } else {
+                            console.log(`[LOC ${focusId}] Cached position too old, fetching fresh...`)
+                        }
+                    } else {
+                        console.log(`[LOC ${focusId}] No cached position available`)
+                    }
+
+                    // If no usable cached position, get a fresh one
+                    if (!location) {
+                        console.log(`[LOC ${focusId}] Calling getCurrentPositionAsync (8s timeout)...`)
+                        location = await Promise.race([
+                            Location.getCurrentPositionAsync({
+                                accuracy: Location.Accuracy.Balanced,
+                            }),
+                            new Promise((_, reject) =>
+                                setTimeout(() => reject(new Error('Location timeout')), 8000)
+                            ),
+                        ])
+                    }
+
+                    const elapsed = Date.now() - startTime
+                    console.log(`[LOC ${focusId}] getCurrentPosition succeeded in ${elapsed}ms`)
+                    console.log(`[LOC ${focusId}] coords: ${location.coords.latitude}, ${location.coords.longitude}`)
+                    console.log(`[LOC ${focusId}] cancelled after getCurrentPosition: ${cancelled}`)
 
                     if (!cancelled) {
                         const userRegion = {
@@ -289,17 +345,31 @@ export default function MapScreen() {
                         setSearchCenter(userRegion)
                         setCurrentMapRegion(userRegion)
                         setLoading(false)
-                        hasLoadedOnce.current = true
+
+                        // On subsequent tab focuses, animate the map to the user's location
+                        if (hasLoadedLocationOnce && mapRef.current) {
+                            console.log(`[LOC ${focusId}] Animating map to user location`)
+                            mapRef.current.animateToRegion(userRegion, 500)
+                        }
+                        hasLoadedLocationOnce = true
+                        console.log(`[LOC ${focusId}] ── Location flow complete (GPS) ──`)
+                    } else {
+                        console.log(`[LOC ${focusId}] ── Cancelled before applying GPS location ──`)
                     }
                 } catch (error) {
-                    console.error('Location error:', error)
-                    if (!cancelled) await applyZipOrDefaults()
+                    console.error(`[LOC ${focusId}] Location error:`, error.message)
+                    console.log(`[LOC ${focusId}] cancelled at catch: ${cancelled}`)
+                    if (!cancelled) {
+                        console.log(`[LOC ${focusId}] Falling back to DEFAULT_LOCATION`)
+                        applyRegion(DEFAULT_LOCATION, 'error-fallback')
+                    }
                 }
             }
 
             getLocation()
 
             return () => {
+                console.log(`[LOC ${focusId}] ── cleanup: setting cancelled = true ──`)
                 cancelled = true
             }
         }, [])
@@ -592,6 +662,7 @@ export default function MapScreen() {
                 MapView on each focus, so initialRegion applies the fresh location each time.
                 Programmatic moves use mapRef.animateToRegion(). */}
             <MapView
+                key={mapKey}
                 ref={mapRef}
                 style={styles.map}
                 provider="google"

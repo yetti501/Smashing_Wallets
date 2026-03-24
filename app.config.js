@@ -1,22 +1,31 @@
 
 require('dotenv').config();
 
+const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+const APPWRITE_ENDPOINT = process.env.APPWRITE_ENDPOINT || process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT;
+const APPWRITE_PROJECT_ID = process.env.APPWRITE_PROJECT_ID || process.env.EXPO_PUBLIC_APPWRITE_PROJECT_ID;
+const APPWRITE_DATABASE_ID = process.env.APPWRITE_DATABASE_ID || process.env.EXPO_PUBLIC_APPWRITE_DATABASE_ID;
+const APPWRITE_COLLECTION_LISTINGS_ID = process.env.APPWRITE_COLLECTION_LISTINGS_ID || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_LISTINGS_ID;
+const APPWRITE_COLLECTION_NOTES_ID = process.env.APPWRITE_COLLECTION_NOTES_ID || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_NOTES_ID;
+const APPWRITE_COLLECTION_SAVED_EVENTS_ID = process.env.APPWRITE_COLLECTION_SAVED_EVENTS_ID || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_SAVED_EVENTS_ID;
+const APPWRITE_BUCKET_ID = process.env.APPWRITE_BUCKET_ID || process.env.EXPO_PUBLIC_APPWRITE_BUCKET_ID;
+
 console.log('--- Config Environment Check ---');
-console.log('Google Maps Key Found:', !!process.env.GOOGLE_MAPS_API_KEY);
-console.log('Appwrite Endpoint Found:', !!process.env.APPWRITE_ENDPOINT);
-console.log('Appwrite Project ID: ', !!process.env.APPWRITE_PROJECT_ID);
-console.log('Appwrite Database ID: ', !!process.env.APPWRITE_DATABASE_ID);
-console.log('Appwrite Collection Listings ID: ', !!process.env.APPWRITE_COLLECTION_LISTINGS_ID);
-console.log('Appwrite Collection Notes ID: ', !!process.env.APPWRITE_COLLECTION_NOTES_ID);
-console.log('Appwrite Collection Saved Events ID: ', !!process.env.APPWRITE_COLLECTION_SAVED_EVENTS_ID);
-console.log('Appwrite Bucket ID:', !!process.env.APPWRITE_BUCKET_ID);
+console.log('Google Maps Key Found:', !!GOOGLE_MAPS_API_KEY);
+console.log('Appwrite Endpoint Found:', !!APPWRITE_ENDPOINT);
+console.log('Appwrite Project ID: ', !!APPWRITE_PROJECT_ID);
+console.log('Appwrite Database ID: ', !!APPWRITE_DATABASE_ID);
+console.log('Appwrite Collection Listings ID: ', !!APPWRITE_COLLECTION_LISTINGS_ID);
+console.log('Appwrite Collection Notes ID: ', !!APPWRITE_COLLECTION_NOTES_ID);
+console.log('Appwrite Collection Saved Events ID: ', !!APPWRITE_COLLECTION_SAVED_EVENTS_ID);
+console.log('Appwrite Bucket ID:', !!APPWRITE_BUCKET_ID);
 console.log('-------------------------------');
 
 export default ({ config }) => {
     return {
         ...config,
         name: 'Smashing Wallets App',
-        slug: 'smashing-wallets-app',
+        slug: 'smashing_wallets',
         version: '1.0.0',
         scheme: 'smashingwallets',
         owner: 'smashing-wallets',
@@ -36,7 +45,7 @@ export default ({ config }) => {
                 ITSAppUsesNonExemptEncryption: false,
             },
             config: {
-                googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY,
+                googleMapsApiKey: GOOGLE_MAPS_API_KEY,
             },
         },
         android: {
@@ -52,7 +61,7 @@ export default ({ config }) => {
             ],
             config: {
                 googleMaps: {
-                    apiKey: process.env.GOOGLE_MAPS_API_KEY,
+                    apiKey: GOOGLE_MAPS_API_KEY,
                 },
             },
         },
@@ -77,16 +86,16 @@ export default ({ config }) => {
         extra: {
             router: {},
             eas: {
-                projectId: '192078dc-8f13-40ce-80f4-d5ab1f8506ed',
+                projectId: 'c585dd89-e219-4beb-b1de-4b54fca12099',
             },
-            appwriteEndpoint: process.env.APPWRITE_ENDPOINT,
-            appwriteProjectId: process.env.APPWRITE_PROJECT_ID,
-            appwriteDatabaseId: process.env.APPWRITE_DATABASE_ID,
-            appwriteCollectionListingsId: process.env.APPWRITE_COLLECTION_LISTINGS_ID,
-            appwriteCollectionNotesId: process.env.APPWRITE_COLLECTION_NOTES_ID,
-            appwriteCollectionSavedEventsId: process.env.APPWRITE_COLLECTION_SAVED_EVENTS_ID,
-            appwriteBucketId: process.env.APPWRITE_BUCKET_ID,
-            googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY,
+            appwriteEndpoint: APPWRITE_ENDPOINT,
+            appwriteProjectId: APPWRITE_PROJECT_ID,
+            appwriteDatabaseId: APPWRITE_DATABASE_ID,
+            appwriteCollectionListingsId: APPWRITE_COLLECTION_LISTINGS_ID,
+            appwriteCollectionNotesId: APPWRITE_COLLECTION_NOTES_ID,
+            appwriteCollectionSavedEventsId: APPWRITE_COLLECTION_SAVED_EVENTS_ID,
+            appwriteBucketId: APPWRITE_BUCKET_ID,
+            googleMapsApiKey: GOOGLE_MAPS_API_KEY,
         },
     };
 };

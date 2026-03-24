@@ -1,15 +1,8 @@
-import { StyleSheet, ScrollView, Text, View } from 'react-native'
-import ThemedText from '../components/ThemedText'
+import { StyleSheet } from 'react-native'
 import { Redirect } from 'expo-router'
-import OnboardingModal from '../components/OnBoardingModal'
 
 const index = () => {
-    return (
-        <>
-            <OnboardingModal onComplete={() => console.log('Onboarding complete')} />
-            <Redirect href="/(map)/map" />
-        </>
-    )
+    return <Redirect href="/(map)/map" />
 }
 
 export default index

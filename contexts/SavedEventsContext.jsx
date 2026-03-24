@@ -147,7 +147,6 @@ export const SavedEventsProvider = ({ children }) => {
     }, [])
 
     // Register logout listener - clears state IMMEDIATELY when logout happens
-    // Register logout listener - clears state IMMEDIATELY when logout happens
     useEffect(() => {
         console.log('>>> SavedEventsContext: registering logout listener')
         const unsubscribe = onLogout(() => {
