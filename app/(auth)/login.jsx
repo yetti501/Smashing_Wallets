@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { View, StyleSheet, Alert } from 'react-native'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { View, StyleSheet, Modal, Text, TouchableOpacity } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useAuth } from '../../contexts/AuthContext'
+import { COLORS } from '../../constants/Colors'
 import ThemedHeader from '../../components/ThemedHeader'
 import ThemedTextInput from '../../components/ThemedTextInput'
 import ThemedButton from '../../components/ThemedButton'
@@ -18,20 +19,21 @@ export default function LoginScreen() {
     })
 
     const [errors, setErrors] = useState({
-        email: '', 
+        email: '',
         password: ''
     })
 
     const [loading, setLoading] = useState(false)
+    const [errorModal, setErrorModal] = useState({ visible: false, title: '', message: '' })
 
     const updateFormData = (field, value) => {
         setFormData(prev => ({
-            ...prev, 
+            ...prev,
             [field]: value
         }))
-        if(errors[field]) { 
+        if(errors[field]) {
             setErrors(prev => ({
-                ...prev, 
+                ...prev,
                 [field]: ''
             }))
         }
@@ -45,7 +47,7 @@ export default function LoginScreen() {
     // Validate form before submission
     const formValidation = () => {
         const newErrors = {
-            email: '', 
+            email: '',
             password: ''
         }
         let isValid = true
@@ -62,7 +64,7 @@ export default function LoginScreen() {
         if(!formData.password) {
             newErrors.password = 'Password is required'
             isValid = false
-        } else if (formData.password.length < 8) { 
+        } else if (formData.password.length < 8) {
             newErrors.password = 'Password must be at least 8 characters'
             isValid = false
         }
@@ -80,32 +82,34 @@ export default function LoginScreen() {
         setLoading(true)
 
         try {
-            // await authService.login(formData.email.trim(), formData.password)
             await login(formData.email.trim(), formData.password)
-            // Alert.alert('Success', 'Logged in successfully!')
-            router.replace('/profile') // Navigate to home after successful login
+            router.replace('/profile')
         } catch(error) {
-            // Login error handling
-            let errorMessage = 'An error occurred during login'
+            let title = 'Login Failed'
+            let message = 'An error occurred during login. Please try again.'
 
             if(error.message) {
-                if (error.message.includes('Invalid credentials')) { 
-                    errorMessage = 'Invalid email or password'
+                if (error.message.includes('Invalid credentials') || error.message.includes('user_not_found')) {
+                    title = 'Incorrect Email or Password'
+                    message = 'No account found with that email, or the password is incorrect. Please double-check your credentials or sign up for a new account.'
                     setErrors({
-                        email: 'Please check your credentials',
-                        password: 'Please check your credentials'
+                        email: 'Check your email address',
+                        password: 'Check your password'
                     })
                 } else if (error.message.includes('user_blocked')) {
-                    errorMessage = 'Your account has been blocked. Please contact support.'
+                    title = 'Account Blocked'
+                    message = 'Your account has been blocked. Please contact support@smashingwallets.com for assistance.'
                 } else if (error.message.includes('Too many requests')) {
-                    errorMessage = 'Too many login attempts. Please try again later.'
+                    title = 'Too Many Attempts'
+                    message = 'You\'ve made too many login attempts. Please wait a few minutes and try again.'
                 } else if (error.message.includes('Network')) {
-                    errorMessage = 'Network error. Please check your connection.'
+                    title = 'Connection Error'
+                    message = 'Unable to reach the server. Please check your internet connection and try again.'
                 } else {
-                    errorMessage = error.message
+                    message = error.message
                 }
             }
-            Alert.alert('Login Failed', errorMessage)
+            setErrorModal({ visible: true, title, message })
         } finally {
             setLoading(false)
         }
@@ -113,13 +117,12 @@ export default function LoginScreen() {
 
     return(
         <ThemedSafeArea centered>
-                <ThemedHeader 
+                <ThemedHeader
                     title="Smashing Wallets"
-                    // subtitle="Login"
                 />
                 <View style={styles.form}>
                     {/* Email Field */}
-                    <ThemedTextInput 
+                    <ThemedTextInput
                         label="Email"
                         placeholder="Enter your email"
                         value={formData.email}
@@ -132,7 +135,7 @@ export default function LoginScreen() {
                         isPassword={false}
                     />
                     {/* Password Field */}
-                    <ThemedTextInput 
+                    <ThemedTextInput
                         label='Password'
                         placeholder='Enter your password'
                         value={formData.password}
@@ -152,14 +155,14 @@ export default function LoginScreen() {
                     />
 
                     {/* Forgot Password Link */}
-                    <ThemedLink 
+                    <ThemedLink
                         inputText={'Forgot Your Password? '}
                         link='/forgot'
                         linkText='Reset Password'
                         loading={loading}
                     />
                     {/* Sign Up Link */}
-                    <ThemedLink 
+                    <ThemedLink
                         inputText={'Don\'t have an account? '}
                         link='/register'
                         linkText='Sign Up'
@@ -167,6 +170,29 @@ export default function LoginScreen() {
                     />
                 </View>
 
+                {/* Error Modal */}
+                <Modal
+                    visible={errorModal.visible}
+                    transparent={true}
+                    animationType="fade"
+                    onRequestClose={() => setErrorModal(prev => ({ ...prev, visible: false }))}
+                >
+                    <View style={styles.modalOverlay}>
+                        <View style={styles.modalContent}>
+                            <View style={styles.modalIconContainer}>
+                                <Ionicons name="alert-circle-outline" size={48} color={COLORS.error} />
+                            </View>
+                            <Text style={styles.modalTitle}>{errorModal.title}</Text>
+                            <Text style={styles.modalMessage}>{errorModal.message}</Text>
+                            <TouchableOpacity
+                                style={styles.modalButton}
+                                onPress={() => setErrorModal(prev => ({ ...prev, visible: false }))}
+                            >
+                                <Text style={styles.modalButtonText}>Try Again</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </Modal>
         </ThemedSafeArea>
     )
 
@@ -174,7 +200,58 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
     form: {
-        width: '100%', 
+        width: '100%',
         gap: 16
-    }
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: COLORS.overlay,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    modalContent: {
+        backgroundColor: COLORS.modalBackground,
+        borderRadius: 16,
+        padding: 32,
+        width: '100%',
+        maxWidth: 400,
+        alignItems: 'center',
+    },
+    modalIconContainer: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: '#FEE2E2',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: COLORS.text,
+        textAlign: 'center',
+        marginBottom: 12,
+    },
+    modalMessage: {
+        fontSize: 15,
+        color: COLORS.textSecondary,
+        textAlign: 'center',
+        lineHeight: 22,
+        marginBottom: 24,
+    },
+    modalButton: {
+        backgroundColor: COLORS.primary,
+        paddingVertical: 14,
+        paddingHorizontal: 48,
+        borderRadius: 12,
+        width: '100%',
+        alignItems: 'center',
+    },
+    modalButtonText: {
+        color: COLORS.textInverse,
+        fontSize: 16,
+        fontWeight: '600',
+    },
 })

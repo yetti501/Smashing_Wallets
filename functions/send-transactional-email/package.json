@@ -1,0 +1,11 @@
+{
+  "name": "send-transactional-email",
+  "version": "1.0.0",
+  "description": "Sends transactional emails for Smashing Wallets",
+  "main": "src/main.js",
+  "type": "module",
+  "dependencies": {
+    "nodemailer": "^6.9.0",
+    "node-appwrite": "^14.0.0"
+  }
+}

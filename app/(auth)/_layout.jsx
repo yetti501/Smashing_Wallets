@@ -32,12 +32,12 @@ const AuthLayoutNav = () => {
 
         if (!user && inAuthGroup) {
             // Not logged in - only allow login, register, forgot
-            if (segments[1] !== 'login' && segments[1] !== 'register' && segments[1] !== 'forgot') {
+            if (segments[1] !== 'login' && segments[1] !== 'register' && segments[1] !== 'forgot' && segments[1] !== 'resetPassword' && segments[1] !== 'verifyEmail') {
                 router.replace('/login')
             } 
         } else if (user && inAuthGroup) {
             // Logged in - allow profile and legal screens
-            const allowedScreens = ['profile', 'privacyPolicy', 'termsOfService']
+            const allowedScreens = ['profile', 'privacyPolicy', 'termsOfService', 'verifyEmail', 'changePassword', 'helpSupport']
             if (!allowedScreens.includes(segments[1])) {
                 router.replace('/profile')
             }
@@ -52,6 +52,10 @@ const AuthLayoutNav = () => {
                 <Stack.Screen name="login" />
                 <Stack.Screen name="register" />
                 <Stack.Screen name="forgot" />
+                <Stack.Screen name="resetPassword" />
+                <Stack.Screen name="verifyEmail" />
+                <Stack.Screen name="changePassword" />
+                <Stack.Screen name="helpSupport" />
                 <Stack.Screen name="privacyPolicy" />
                 <Stack.Screen name="termsOfService" />
             </Stack>

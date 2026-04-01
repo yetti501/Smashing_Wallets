@@ -1,7 +1,8 @@
-import { account } from '../lib/appwrite'
-import { ID } from 'appwrite'
+import { account, functions } from '../lib/appwrite'
+import { ID, ExecutionMethod } from 'appwrite'
 import { router } from 'expo-router'
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
+import { sendTransactionalEmail } from '../lib/emailService'
 
 const AuthContext = createContext()
 
@@ -190,7 +191,19 @@ export const authService = {
     // ============================================
     async deleteAccount() {
         try {
-            await account.delete()
+            const execution = await functions.createExecution(
+                'delete-account',
+                '',
+                false,
+                undefined,
+                ExecutionMethod.POST
+            )
+
+            // Check if the function execution succeeded
+            if (execution.responseStatusCode >= 400) {
+                const body = JSON.parse(execution.responseBody || '{}')
+                throw new Error(body.message || 'Failed to delete account')
+            }
         } catch (error) {
             throw error
         }
@@ -307,11 +320,19 @@ export const AuthProvider = ({ children }) => {
     const register = async (email, password, name) => {
         const response = await authService.register(email, password, name)
         await checkUser()
-        
+
         // Get the updated user and notify listeners
         const loggedInUser = await authService.getCurrentUser()
         notifyLoginListeners(loggedInUser)
-        
+
+        // Send verification email + welcome email (non-blocking)
+        try {
+            await authService.sendEmailVerification('https://smashingwallets.com/verify-email')
+        } catch (error) {
+            console.log('Email verification send failed (non-critical):', error.message)
+        }
+        sendTransactionalEmail('welcome', email, name)
+
         return response
     }
 
@@ -354,6 +375,7 @@ export const AuthProvider = ({ children }) => {
     const updateUserPassword = async(newPassword, oldPassword) => {
         const updatedUser = await authService.updatePassword(newPassword, oldPassword)
         setUser(updatedUser)
+        sendTransactionalEmail('password_changed', updatedUser.email, updatedUser.name)
         return updatedUser
     }
 
@@ -414,9 +436,15 @@ export const AuthProvider = ({ children }) => {
     // ACCOUNT DELETION
     // ============================================
     const deleteAccount = async () => {
+        // Capture user info before deletion
+        const deletedEmail = user?.email
+        const deletedName = user?.name
         await authService.deleteAccount()
         setUser(null)
         notifyLogoutListeners()
+        if (deletedEmail) {
+            sendTransactionalEmail('account_deleted', deletedEmail, deletedName)
+        }
     }
 
     const value = {

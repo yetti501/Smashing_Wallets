@@ -1,15 +1,16 @@
 import { useState } from 'react'
-import { 
-    View, 
-    StyleSheet, 
-    ScrollView, 
-    TextInput, 
-    TouchableOpacity, 
+import {
+    View,
+    StyleSheet,
+    ScrollView,
+    TextInput,
+    TouchableOpacity,
     Alert,
     Text,
     Switch,
     ActivityIndicator,
-    Platform
+    Platform,
+    Modal
 } from 'react-native'
 import { router } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
@@ -26,10 +27,12 @@ import { imageService } from '../../lib/imageService'
 import googlePlacesService from '../../lib/googlePlacesService'
 
 export default function NewListingScreen() {
-    const { user } = useAuth()
+    const { user, sendEmailVerification } = useAuth()
     const { createListing } = useListings()
     const [submitting, setSubmitting] = useState(false)
     const [uploadingImages, setUploadingImages] = useState(false)
+    const [verifyModalVisible, setVerifyModalVisible] = useState(false)
+    const [verificationSending, setVerificationSending] = useState(false)
     
     // Date picker state
     const [showDatePicker, setShowDatePicker] = useState(false)
@@ -452,9 +455,34 @@ export default function NewListingScreen() {
         return true
     }
 
+    const handleSendVerification = async () => {
+        setVerificationSending(true)
+        try {
+            await sendEmailVerification('https://smashingwallets.com/verify-email')
+            setVerifyModalVisible(false)
+            Alert.alert(
+                'Verification Email Sent',
+                'Please check your inbox and spam folder for the verification link. Once verified, you can create listings.',
+                [{ text: 'OK' }]
+            )
+        } catch (error) {
+            let msg = 'Failed to send verification email.'
+            if (error.message?.includes('Too many requests')) {
+                msg = 'Too many requests. Please try again later.'
+            }
+            Alert.alert('Error', msg)
+        } finally {
+            setVerificationSending(false)
+        }
+    }
+
     const handleSubmit = async () => {
         if (!user) {
             Alert.alert('Error', 'You must be logged in to create an event')
+            return
+        }
+        if (!user.emailVerification) {
+            setVerifyModalVisible(true)
             return
         }
         if (!validateForm()) return
@@ -1033,6 +1061,42 @@ export default function NewListingScreen() {
                 onKeepOriginal={handleKeepOriginalAddress}
                 isValidating={isValidating}
             />
+
+            {/* Email Verification Required Modal */}
+            <Modal
+                visible={verifyModalVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setVerifyModalVisible(false)}
+            >
+                <View style={styles.verifyModalOverlay}>
+                    <View style={styles.verifyModalContent}>
+                        <View style={styles.verifyIconContainer}>
+                            <Ionicons name="mail-outline" size={48} color={COLORS.info} />
+                        </View>
+                        <Text style={styles.verifyModalTitle}>Email Verification Required</Text>
+                        <Text style={styles.verifyModalMessage}>
+                            You need to verify your email address before you can create event listings. This helps keep our community safe from spam.
+                        </Text>
+                        <TouchableOpacity
+                            style={styles.verifyModalSendButton}
+                            onPress={handleSendVerification}
+                            disabled={verificationSending}
+                        >
+                            <Ionicons name="send-outline" size={18} color={COLORS.textInverse} style={{ marginRight: 8 }} />
+                            <Text style={styles.verifyModalSendButtonText}>
+                                {verificationSending ? 'Sending...' : 'Send Verification Email'}
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.verifyModalCancelButton}
+                            onPress={() => setVerifyModalVisible(false)}
+                        >
+                            <Text style={styles.verifyModalCancelText}>Cancel</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </ThemedSafeArea>
     )
 }
@@ -1214,5 +1278,68 @@ const styles = StyleSheet.create({
     },
     inputDisabled: {
         opacity: 0.5,
+    },
+    // Email Verification Modal Styles
+    verifyModalOverlay: {
+        flex: 1,
+        backgroundColor: COLORS.overlay,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    verifyModalContent: {
+        backgroundColor: COLORS.modalBackground,
+        borderRadius: 16,
+        padding: 32,
+        width: '100%',
+        maxWidth: 400,
+        alignItems: 'center',
+    },
+    verifyIconContainer: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: '#DBEAFE',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    verifyModalTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: COLORS.text,
+        textAlign: 'center',
+        marginBottom: 12,
+    },
+    verifyModalMessage: {
+        fontSize: 15,
+        color: COLORS.textSecondary,
+        textAlign: 'center',
+        lineHeight: 22,
+        marginBottom: 24,
+    },
+    verifyModalSendButton: {
+        backgroundColor: COLORS.primary,
+        paddingVertical: 14,
+        paddingHorizontal: 24,
+        borderRadius: 12,
+        width: '100%',
+        alignItems: 'center',
+        flexDirection: 'row',
+        justifyContent: 'center',
+        marginBottom: 12,
+    },
+    verifyModalSendButtonText: {
+        color: COLORS.textInverse,
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    verifyModalCancelButton: {
+        paddingVertical: 12,
+    },
+    verifyModalCancelText: {
+        color: COLORS.textSecondary,
+        fontSize: 15,
+        fontWeight: '500',
     },
 })

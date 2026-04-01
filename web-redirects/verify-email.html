@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify Email - Smashing Wallets</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f8f9fa;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            background: #fff;
+            border-radius: 16px;
+            padding: 40px;
+            max-width: 420px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+        }
+        .icon { font-size: 48px; margin-bottom: 16px; }
+        h1 { font-size: 22px; color: #1E3A5F; margin-bottom: 8px; }
+        p { font-size: 15px; color: #6B7280; line-height: 1.5; margin-bottom: 24px; }
+        .btn {
+            display: inline-block;
+            background: #FF5747;
+            color: #fff;
+            padding: 14px 32px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 16px;
+        }
+        .btn:hover { background: #E63E2E; }
+        .fallback { font-size: 13px; color: #9CA3AF; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">✉️</div>
+        <h1>Verify Your Email</h1>
+        <p>Tap the button below to open Smashing Wallets and verify your email address.</p>
+        <a id="openApp" class="btn" href="#">Open App</a>
+        <p class="fallback">If the app doesn't open, make sure Smashing Wallets is installed on your device.</p>
+    </div>
+
+    <script>
+        // Extract query params from the URL
+        const params = new URLSearchParams(window.location.search);
+        const userId = params.get('userId');
+        const secret = params.get('secret');
+
+        // Build the deep link to the app
+        const deepLink = `smashingwallets://verifyEmail?userId=${encodeURIComponent(userId)}&secret=${encodeURIComponent(secret)}`;
+
+        // Set the button href
+        document.getElementById('openApp').href = deepLink;
+
+        // Auto-attempt to open the app
+        window.location.href = deepLink;
+    </script>
+</body>
+</html>

@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
-import { View, StyleSheet, Alert, TouchableOpacity, Modal, Text, } from 'react-native'
-import { router } from 'expo-router'
+import { useState, useEffect, useCallback } from 'react'
+import { View, StyleSheet, TouchableOpacity, Modal, Text, Alert } from 'react-native'
+import { router, useFocusEffect } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 
 import { COLORS } from '../../constants/Colors'
@@ -13,10 +13,12 @@ import ThemedTextInput from '../../components/ThemedTextInput'
 import ThemedSafeArea from '../../components/ThemedSafeArea'
 
 export default function ProfileScreen() {
-    const { user, logout, updateUserName, updateUserPhone, updateUserPreferences, deleteAccount, loading: authLoading } = useAuth()
+    const { user, logout, updateUserName, updateUserPhone, updateUserPreferences, deleteAccount, sendEmailVerification, checkUser, loading: authLoading } = useAuth()
     const [loading, setLoading] = useState(false)
+    const [verificationSending, setVerificationSending] = useState(false)
     const [editModalVisible, setEditModalVisible] = useState(false)
     const [deleteModalVisible, setDeleteModalVisible] = useState(false)
+    const [logoutModalVisible, setLogoutModalVisible] = useState(false)
     const [editField, setEditField] = useState('')
     const [editValue, setEditValue] = useState('')
     const [password, setPassword] = useState('')
@@ -30,6 +32,13 @@ export default function ProfileScreen() {
             router.replace('/login')
         }
     }, [user, authLoading])
+
+    // Refresh user data when screen is focused (e.g. after verifying email externally)
+    useFocusEffect(
+        useCallback(() => {
+            checkUser()
+        }, [])
+    )
 
     const formatDate = (dateString) => {
         if(!dateString) return 'N/A'
@@ -90,33 +99,43 @@ export default function ProfileScreen() {
         }
     }
 
+    const handleResendVerification = async () => {
+        setVerificationSending(true)
+        try {
+            await sendEmailVerification('https://smashingwallets.com/verify-email')
+            Alert.alert(
+                'Verification Email Sent',
+                'Please check your inbox and spam folder for the verification link.',
+                [{ text: 'OK' }]
+            )
+        } catch (error) {
+            let errorMessage = 'Failed to send verification email'
+            if (error.message?.includes('Too many requests')) {
+                errorMessage = 'Too many requests. Please try again later.'
+            } else if (error.message) {
+                errorMessage = error.message
+            }
+            Alert.alert('Error', errorMessage)
+        } finally {
+            setVerificationSending(false)
+        }
+    }
+
     const handleLogout = () => {
-        Alert.alert(
-            'Confirm Logout', 
-            'Are you sure you want to log out?',
-            [
-                {
-                    text: 'Cancel',
-                    style: 'cancel'
-                },
-                {
-                    text: 'Logout', 
-                    style: 'destructive',
-                    onPress: async () => {
-                        setLoading(true)
-                        try {
-                            await logout()
-                            // Navigate to map (public screen) after logout
-                            router.replace('/(map)/map')
-                        } catch (error) {
-                            Alert.alert('Error', error.message || 'Failed to Logout')
-                        } finally {
-                            setLoading(false)
-                        }
-                    }
-                }
-            ]
-        )
+        setLogoutModalVisible(true)
+    }
+
+    const confirmLogout = async () => {
+        setLoading(true)
+        try {
+            await logout()
+            setLogoutModalVisible(false)
+            router.replace('/(map)/map')
+        } catch (error) {
+            setLogoutModalVisible(false)
+        } finally {
+            setLoading(false)
+        }
     }
 
     const handleEditField = (field, currentValue) => {
@@ -172,44 +191,23 @@ export default function ProfileScreen() {
 
     // Delete Account Handler
     const handleDeleteAccount = () => {
-        // First confirmation
-        Alert.alert(
-            'Delete Account',
-            'Are you sure you want to delete your account? This action cannot be undone.',
-            [
-                { text: 'Cancel', style: 'cancel' },
-                { 
-                    text: 'Continue', 
-                    style: 'destructive',
-                    onPress: () => setDeleteModalVisible(true)
-                }
-            ]
-        )
+        setDeleteModalVisible(true)
     }
 
     const confirmDeleteAccount = async () => {
-        // Check if user typed DELETE correctly
         if (deleteConfirmText !== 'DELETE') {
-            Alert.alert('Error', 'Please type DELETE to confirm')
             return
         }
 
         setLoading(true)
         try {
-            // Delete the account
             await deleteAccount()
-            
-            // Close modal and navigate to login
             setDeleteModalVisible(false)
             setDeleteConfirmText('')
-            
-            Alert.alert(
-                'Account Deleted',
-                'Your account has been permanently deleted.',
-                [{ text: 'OK', onPress: () => router.replace('/login') }]
-            )
+            router.replace('/login')
         } catch (error) {
-            Alert.alert('Error', error.message || 'Failed to delete account. Please try again.')
+            setDeleteModalVisible(false)
+            setDeleteConfirmText('')
         } finally {
             setLoading(false)
         }
@@ -236,8 +234,8 @@ export default function ProfileScreen() {
     }
 
     const menuItems = [
-        { icon: 'key-outline', title: 'Change Password', onPress: () => router.push('/forgot') },
-        { icon: 'help-circle-outline', title: 'Help & Support', onPress: () => Alert.alert('Help & Support', 'Coming soon!') },
+        { icon: 'key-outline', title: 'Change Password', onPress: () => router.push('/changePassword') },
+        { icon: 'help-circle-outline', title: 'Help & Support', onPress: () => router.push('/helpSupport') },
         { icon: 'document-text-outline', title: 'Terms of Service', onPress: () => router.push('/termsOfService') },
         { icon: 'shield-checkmark-outline', title: 'Privacy Policy', onPress: () => router.push('/privacyPolicy') },
         { icon: 'trash-outline', title: 'Delete Account', onPress: handleDeleteAccount, destructive: true },
@@ -270,14 +268,21 @@ export default function ProfileScreen() {
                 <Text style={styles.userName}>{user.name}</Text>
                 <Text style={styles.userEmail}>{user.email}</Text>
                 {/* Email verification Badge */}
-                <View style={[
-                    styles.verificationBadge,
-                    user.emailVerification ? styles.verifiedBadge : styles.unverifiedBadge
-                ]}>
-                    <Text style={styles.badgeText}>
-                        {user.emailVerification ? '✓ Email Verified' : '⚠ Email Not Verified'}
-                    </Text>
-                </View>
+                {user.emailVerification ? (
+                    <View style={[styles.verificationBadge, styles.verifiedBadge]}>
+                        <Text style={styles.badgeText}>✓ Email Verified</Text>
+                    </View>
+                ) : (
+                    <TouchableOpacity
+                        style={[styles.verificationBadge, styles.unverifiedBadge]}
+                        onPress={handleResendVerification}
+                        disabled={verificationSending}
+                    >
+                        <Text style={styles.badgeText}>
+                            {verificationSending ? 'Sending...' : '⚠ Tap to Verify Email'}
+                        </Text>
+                    </TouchableOpacity>
+                )}
             </View>
 
             {/* Account Information Section */}
@@ -404,6 +409,44 @@ export default function ProfileScreen() {
                 disabled={loading}
             />
 
+            {/* Logout Confirmation Modal */}
+            <Modal
+                visible={logoutModalVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setLogoutModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.logoutIconContainer}>
+                            <Ionicons name="log-out-outline" size={48} color={COLORS.primary} />
+                        </View>
+                        <Text style={styles.themedModalTitle}>Log Out</Text>
+                        <Text style={styles.themedModalMessage}>
+                            Are you sure you want to log out of your account?
+                        </Text>
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity
+                                style={[styles.modalButton, styles.themedCancelButton]}
+                                onPress={() => setLogoutModalVisible(false)}
+                                disabled={loading}
+                            >
+                                <Text style={styles.themedCancelButtonText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.modalButton, styles.logoutButton]}
+                                onPress={confirmLogout}
+                                disabled={loading}
+                            >
+                                <Text style={styles.themedActionButtonText}>
+                                    {loading ? 'Logging out...' : 'Log Out'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
             {/* Edit Modal */}
             <Modal
                 visible={editModalVisible}
@@ -477,35 +520,35 @@ export default function ProfileScreen() {
             <Modal
                 visible={deleteModalVisible}
                 transparent={true}
-                animationType="slide"
+                animationType="fade"
                 onRequestClose={handleCloseDeleteModal}
             >
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
-                        <View style={styles.deleteIconContainer}>
-                            <Ionicons name="warning" size={48} color={COLORS.error} />
+                        <View style={styles.deleteIconCircle}>
+                            <Ionicons name="warning-outline" size={48} color={COLORS.error} />
                         </View>
-                        
-                        <Text style={styles.deleteModalTitle}>Delete Account</Text>
-                        
-                        <Text style={styles.deleteModalText}>
+
+                        <Text style={styles.themedModalTitle}>Delete Account</Text>
+
+                        <Text style={styles.themedModalMessage}>
                             This will permanently delete your account and all associated data including:
                         </Text>
-                        
+
                         <View style={styles.deleteList}>
-                            <Text style={styles.deleteListItem}>• Your profile information</Text>
-                            <Text style={styles.deleteListItem}>• All your event listings</Text>
-                            <Text style={styles.deleteListItem}>• Your saved preferences</Text>
+                            <Text style={styles.deleteListItem}>Your profile information</Text>
+                            <Text style={styles.deleteListItem}>All your event listings</Text>
+                            <Text style={styles.deleteListItem}>Your saved preferences</Text>
                         </View>
-                        
+
                         <Text style={styles.deleteModalWarning}>
                             This action cannot be undone.
                         </Text>
-                        
+
                         <Text style={styles.deleteModalConfirmLabel}>
                             Type <Text style={styles.deleteKeyword}>DELETE</Text> to confirm:
                         </Text>
-                        
+
                         <ThemedTextInput
                             label=""
                             placeholder="Type DELETE here"
@@ -517,24 +560,24 @@ export default function ProfileScreen() {
                         />
 
                         <View style={styles.modalButtons}>
-                            <TouchableOpacity 
-                                style={[styles.modalButton, styles.cancelButton]}
+                            <TouchableOpacity
+                                style={[styles.modalButton, styles.themedCancelButton]}
                                 onPress={handleCloseDeleteModal}
                                 disabled={loading}
                             >
-                                <Text style={styles.cancelButtonText}>Cancel</Text>
+                                <Text style={styles.themedCancelButtonText}>Cancel</Text>
                             </TouchableOpacity>
 
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={[
-                                    styles.modalButton, 
+                                    styles.modalButton,
                                     styles.deleteButton,
                                     deleteConfirmText !== 'DELETE' && styles.deleteButtonDisabled
                                 ]}
                                 onPress={confirmDeleteAccount}
                                 disabled={loading || deleteConfirmText !== 'DELETE'}
                             >
-                                <Text style={styles.deleteButtonText}>
+                                <Text style={styles.themedActionButtonText}>
                                     {loading ? 'Deleting...' : 'Delete Account'}
                                 </Text>
                             </TouchableOpacity>
@@ -633,57 +676,98 @@ const styles = StyleSheet.create({
     },
     modalOverlay: {
         flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        backgroundColor: COLORS.overlay,
         justifyContent: 'center',
         alignItems: 'center',
-        padding: 20
+        padding: 20,
     },
     modalContent: {
-        backgroundColor: '#fff',
+        backgroundColor: COLORS.modalBackground,
         borderRadius: 16,
-        padding: 24,
+        padding: 32,
         width: '100%',
-        maxWidth: 400
+        maxWidth: 400,
+        alignItems: 'center',
     },
     modalTitle: {
         fontSize: 20,
         fontWeight: 'bold',
         marginBottom: 20,
-        textAlign: 'center'
-    },
-    modalInput: {
-        borderWidth: 1,
-        borderColor: '#ddd',
-        borderRadius: 8,
-        padding: 12,
-        fontSize: 16,
-        marginBottom: 20
+        textAlign: 'center',
+        color: COLORS.text,
     },
     modalButtons: {
         flexDirection: 'row',
-        gap: 12
+        gap: 12,
+        width: '100%',
     },
     modalButton: {
         flex: 1,
-        padding: 12,
-        borderRadius: 8,
-        alignItems: 'center'
+        paddingVertical: 14,
+        borderRadius: 12,
+        alignItems: 'center',
     },
+    // Themed modal shared styles
+    themedModalTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: COLORS.text,
+        textAlign: 'center',
+        marginBottom: 12,
+    },
+    themedModalMessage: {
+        fontSize: 15,
+        color: COLORS.textSecondary,
+        textAlign: 'center',
+        lineHeight: 22,
+        marginBottom: 20,
+    },
+    themedCancelButton: {
+        backgroundColor: COLORS.surfaceSecondary,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+    },
+    themedCancelButtonText: {
+        fontSize: 16,
+        color: COLORS.text,
+        fontWeight: '600',
+    },
+    themedActionButtonText: {
+        fontSize: 16,
+        color: COLORS.textInverse,
+        fontWeight: '600',
+    },
+    // Logout modal
+    logoutIconContainer: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: '#FFF1F0',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    logoutButton: {
+        backgroundColor: COLORS.primary,
+    },
+    // Edit modal
     cancelButton: {
-        backgroundColor: '#f0f0f0'
+        backgroundColor: COLORS.surfaceSecondary,
+        borderWidth: 1,
+        borderColor: COLORS.border,
     },
     saveButton: {
-        backgroundColor: COLORS.primary
+        backgroundColor: COLORS.primary,
     },
     cancelButtonText: {
         fontSize: 16,
-        color: '#333',
-        fontWeight: '600'
+        color: COLORS.text,
+        fontWeight: '600',
     },
     saveButtonText: {
         fontSize: 16,
-        color: '#fff',
-        fontWeight: '600'
+        color: COLORS.textInverse,
+        fontWeight: '600',
     },
     verificationBadge: {
         paddingHorizontal: 16,
@@ -776,32 +860,27 @@ const styles = StyleSheet.create({
         borderBottomWidth: 0,
     },
     // Delete Modal Styles
-    deleteIconContainer: {
+    deleteIconCircle: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: '#FEE2E2',
+        justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 16,
-    },
-    deleteModalTitle: {
-        fontSize: 22,
-        fontWeight: 'bold',
-        color: COLORS.error,
-        textAlign: 'center',
-        marginBottom: 12,
-    },
-    deleteModalText: {
-        fontSize: 14,
-        color: COLORS.textSecondary,
-        textAlign: 'center',
-        marginBottom: 12,
+        marginBottom: 20,
     },
     deleteList: {
-        alignSelf: 'flex-start',
+        alignSelf: 'stretch',
         marginBottom: 16,
-        paddingLeft: 8,
+        paddingLeft: 12,
     },
     deleteListItem: {
         fontSize: 14,
         color: COLORS.text,
-        marginBottom: 4,
+        marginBottom: 6,
+        paddingLeft: 8,
+        borderLeftWidth: 2,
+        borderLeftColor: COLORS.error,
     },
     deleteModalWarning: {
         fontSize: 14,

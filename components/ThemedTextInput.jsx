@@ -44,6 +44,7 @@ const ThemedTextInput = ({
                 <TouchableOpacity
                     style={ styles.eyeIcon }
                     onPress={() => setShowPassword(!showPassword)}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 >
                     <Ionicons 
                         name={showPassword ? 'eye-off-outline' : 'eye-outline'}
@@ -133,8 +134,12 @@ const styles = StyleSheet.create({
     },
     eyeIcon: {
         position: 'absolute',
-        right: 16, 
-        top: 14
+        right: 4,
+        top: 0,
+        bottom: 0,
+        width: 48,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     hintText: {
         fontSize: 12,

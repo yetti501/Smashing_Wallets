@@ -1,4 +1,4 @@
-import { ScrollView, View, Text, StyleSheet, TouchableOpacity } from 'react-native'
+import { ScrollView, View, Text, StyleSheet, TouchableOpacity, Linking } from 'react-native'
 import { router } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { COLORS, SPACING, RADIUS } from '../../constants/Colors'
@@ -175,14 +175,23 @@ export default function TermsOfServiceScreen() {
                     <Text style={styles.paragraph}>
                         If you have questions about these Terms, please contact us:
                     </Text>
-                    <View style={styles.contactBox}>
-                        <Text style={styles.contactLabel}>Email</Text>
-                        <Text style={styles.contactValue}>{CONTACT_EMAIL}</Text>
-                    </View>
+                    <TouchableOpacity
+                        style={styles.contactCard}
+                        onPress={() => Linking.openURL(`mailto:${CONTACT_EMAIL}?subject=Smashing Wallets Terms of Service Question`)}
+                    >
+                        <View style={styles.contactIconContainer}>
+                            <Ionicons name="mail-outline" size={24} color={COLORS.primary} />
+                        </View>
+                        <View style={styles.contactInfo}>
+                            <Text style={styles.contactTitle}>Email Support</Text>
+                            <Text style={styles.contactValue}>{CONTACT_EMAIL}</Text>
+                        </View>
+                        <Ionicons name="open-outline" size={18} color={COLORS.textTertiary} />
+                    </TouchableOpacity>
                 </View>
 
                 <View style={styles.footer}>
-                    <Text style={styles.footerText}>© 2025 {COMPANY_NAME}. All rights reserved.</Text>
+                    <Text style={styles.footerText}>© 2025–2026 {COMPANY_NAME}. All rights reserved.</Text>
                 </View>
 
                 <View style={{ height: 40 }} />
@@ -249,7 +258,9 @@ const styles = StyleSheet.create({
         color: COLORS.textSecondary,
         marginBottom: SPACING.xs,
     },
-    contactBox: {
+    contactCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
         backgroundColor: COLORS.surface,
         borderRadius: RADIUS.md,
         padding: SPACING.lg,
@@ -257,14 +268,26 @@ const styles = StyleSheet.create({
         borderColor: COLORS.border,
         marginTop: SPACING.md,
     },
-    contactLabel: {
-        fontSize: 13,
-        color: COLORS.textSecondary,
-        marginBottom: 4,
+    contactIconContainer: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: COLORS.surfaceSecondary,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: SPACING.md,
+    },
+    contactInfo: {
+        flex: 1,
+    },
+    contactTitle: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: COLORS.text,
+        marginBottom: 2,
     },
     contactValue: {
-        fontSize: 16,
-        fontWeight: '500',
+        fontSize: 14,
         color: COLORS.primary,
     },
     footer: {
