@@ -81,11 +81,6 @@ const ShareButton = ({
             })
 
             if (result.action === Share.sharedAction) {
-                // Shared successfully
-                if (result.activityType) {
-                    // iOS - shared with specific activity
-                    console.log('Shared with:', result.activityType)
-                }
             }
         } catch (error) {
             if (error.message !== 'User did not share') {

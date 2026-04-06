@@ -76,7 +76,6 @@ const AddressAutocomplete = ({
             setSuggestions(results)
             setShowSuggestions(results.length > 0)
         } catch (error) {
-            console.error('Error fetching suggestions:', error)
             setSuggestions([])
         } finally {
             setIsLoading(false)
@@ -137,7 +136,6 @@ const AddressAutocomplete = ({
                 }
             }
         } catch (error) {
-            console.error('Error getting place details:', error)
         } finally {
             setIsLoading(false)
         }

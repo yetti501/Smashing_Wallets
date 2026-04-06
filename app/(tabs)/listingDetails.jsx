@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
-import { View, StyleSheet, Text, ScrollView, TouchableOpacity, Alert, Linking, ActivityIndicator } from 'react-native'
+import { View, StyleSheet, Text, ScrollView, TouchableOpacity, Alert, Linking, ActivityIndicator, Platform } from 'react-native'
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 
 import ThemedSafeArea from '../../components/ThemedSafeArea'
+import ThemedModal from '../../components/ThemedModal'
 import ThemedInfoCard from '../../components/ThemedInfoCard'
 import ImageGallery from '../../components/ImageGallery'
 import SaveButton from '../../components/SaveButton'
@@ -33,6 +34,9 @@ export default function ListingDetailsScreen() {
     const [addingToCalendar, setAddingToCalendar] = useState(false)
     const [userLocation, setUserLocation] = useState(null)
     const [distanceInfo, setDistanceInfo] = useState(null)
+    const [deleteModal, setDeleteModal] = useState(false)
+    const [deleting, setDeleting] = useState(false)
+    const [calendarModal, setCalendarModal] = useState({ visible: false, success: false, message: '', eventDate: null })
 
     useFocusEffect(
         useCallback(() => {
@@ -68,7 +72,6 @@ export default function ListingDetailsScreen() {
             setListing(data)
         } catch (err) {
             setError(err.message)
-            console.error('Error loading listing:', err)
         } finally {
             setLoading(false)
         }
@@ -82,26 +85,21 @@ export default function ListingDetailsScreen() {
     }
 
     const handleDelete = () => {
-        Alert.alert(
-            'Delete Event',
-            'Are you sure you want to delete this event? This action cannot be undone.',
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Delete',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            await deleteListing(listing.$id)
-                            Alert.alert('Success', 'Event deleted successfully')
-                            router.back()
-                        } catch (error) {
-                            Alert.alert('Error', error.message)
-                        }
-                    }
-                }
-            ]
-        )
+        setDeleteModal(true)
+    }
+
+    const confirmDelete = async () => {
+        try {
+            setDeleting(true)
+            await deleteListing(listing.$id)
+            setDeleteModal(false)
+            router.back()
+        } catch (error) {
+            setDeleteModal(false)
+            Alert.alert('Error', error.message)
+        } finally {
+            setDeleting(false)
+        }
     }
 
     const handleCallPhone = () => {
@@ -122,40 +120,64 @@ export default function ListingDetailsScreen() {
         Linking.openURL(url)
     }
 
+    const openCalendarApp = (date) => {
+        if (Platform.OS === 'ios') {
+            // Open iOS Calendar app at the event date
+            if (date) {
+                const timestamp = Math.floor(date.getTime() / 1000)
+                Linking.openURL(`calshow:${timestamp}`)
+            } else {
+                Linking.openURL('calshow:')
+            }
+        } else {
+            // Open Android calendar at the event date
+            if (date) {
+                Linking.openURL(`content://com.android.calendar/time/${date.getTime()}`)
+            } else {
+                Linking.openURL('content://com.android.calendar/time/')
+            }
+        }
+    }
+
     const handleAddToCalendar = async () => {
         if (!listing || addingToCalendar) return
-        
+
         setAddingToCalendar(true)
-        
+
         try {
             let result
-            
+            let eventDate = null
+
             if (listing.multiday && listing.startDate && listing.endDate) {
                 result = await calendarService.addMultiDayToCalendar(listing)
+                try { eventDate = calendarService.createEventDates({ ...listing, date: listing.startDate }).startDate } catch {}
             } else {
                 result = await calendarService.addToCalendar(listing)
+                try { eventDate = calendarService.createEventDates(listing).startDate } catch {}
             }
-            
+
             if (result.success) {
-                Alert.alert(
-                    'Added to Calendar',
-                    `"${listing.title}" has been added to your calendar.`,
-                    [{ text: 'OK' }]
-                )
+                setCalendarModal({
+                    visible: true,
+                    success: true,
+                    message: `"${listing.title}" has been added to your calendar. It may take up to 5 minutes for the event to appear.`,
+                    eventDate,
+                })
             } else if (result.error && result.error !== 'Permission denied') {
-                Alert.alert(
-                    'Error',
-                    'Could not add event to calendar. Please try again.',
-                    [{ text: 'OK' }]
-                )
+                setCalendarModal({
+                    visible: true,
+                    success: false,
+                    message: `Could not add event to calendar: ${result.error}`,
+                    eventDate: null,
+                })
             }
         } catch (error) {
-            console.error('Error adding to calendar:', error)
-            Alert.alert(
-                'Error',
-                'Something went wrong. Please try again.',
-                [{ text: 'OK' }]
-            )
+            setCalendarModal({
+                visible: true,
+                success: false,
+                message: `Something went wrong: ${error.message}`,
+                eventDate: null,
+            })
         } finally {
             setAddingToCalendar(false)
         }
@@ -474,6 +496,59 @@ export default function ListingDetailsScreen() {
                     )}
                 </View>
             </ScrollView>
+
+            <ThemedModal
+                visible={deleteModal}
+                onClose={() => setDeleteModal(false)}
+                icon="trash-outline"
+                iconColor={COLORS.error}
+                title="Delete Event"
+                message="Are you sure you want to delete this event? This action cannot be undone."
+                buttons={[
+                    {
+                        text: 'Cancel',
+                        style: 'cancel',
+                        onPress: () => setDeleteModal(false),
+                    },
+                    {
+                        text: deleting ? 'Deleting...' : 'Delete',
+                        style: 'destructive',
+                        onPress: confirmDelete,
+                        disabled: deleting,
+                    },
+                ]}
+            />
+
+            {/* Calendar Modal */}
+            <ThemedModal
+                visible={calendarModal.visible}
+                onClose={() => setCalendarModal(prev => ({ ...prev, visible: false }))}
+                icon={calendarModal.success ? 'calendar-outline' : 'alert-circle-outline'}
+                iconColor={calendarModal.success ? COLORS.success : COLORS.error}
+                title={calendarModal.success ? 'Added to Calendar' : 'Calendar Error'}
+                message={calendarModal.message}
+                buttons={calendarModal.success ? [
+                    {
+                        text: 'Done',
+                        style: 'cancel',
+                        onPress: () => setCalendarModal(prev => ({ ...prev, visible: false })),
+                    },
+                    {
+                        text: 'View in Calendar',
+                        style: 'primary',
+                        onPress: () => {
+                            setCalendarModal(prev => ({ ...prev, visible: false }))
+                            openCalendarApp(calendarModal.eventDate)
+                        },
+                    },
+                ] : [
+                    {
+                        text: 'OK',
+                        style: 'primary',
+                        onPress: () => setCalendarModal(prev => ({ ...prev, visible: false })),
+                    },
+                ]}
+            />
         </ThemedSafeArea>
     )
 }

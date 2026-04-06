@@ -54,10 +54,12 @@ export default ({ config }) => {
                 backgroundColor: '#ffffff',
             },
             edgeToEdgeEnabled: true,
-            package: 'com.smashingwallets.Smashing_Wallets',
+            package: 'com.smashingwallets.app',
             permissions: [
                 'ACCESS_COARSE_LOCATION',
-                'ACCESS_FINE_LOCATION'
+                'ACCESS_FINE_LOCATION',
+                'READ_CALENDAR',
+                'WRITE_CALENDAR'
             ],
             config: {
                 googleMaps: {

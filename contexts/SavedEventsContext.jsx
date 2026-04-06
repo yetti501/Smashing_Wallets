@@ -118,7 +118,6 @@ export const SavedEventsProvider = ({ children }) => {
      * Clear all saved events state
      */
     const clearSavedEvents = useCallback(() => {
-        console.log('>>> SavedEventsContext: clearing saved events')
         setSavedEvents([])
         setSavedListingIds(new Set())
         setError(null)
@@ -133,14 +132,11 @@ export const SavedEventsProvider = ({ children }) => {
         try {
             setLoading(true)
             setError(null)
-            console.log('>>> SavedEventsContext: fetching saved events for', userId)
             const events = await savedEventsService.getSavedEvents(userId)
             setSavedEvents(events)
             setSavedListingIds(new Set(events.map(e => e.listingId)))
-            console.log('>>> SavedEventsContext: fetched', events.length, 'saved events')
         } catch (err) {
             setError(err.message)
-            console.error('Error fetching saved events:', err)
         } finally {
             setLoading(false)
         }
@@ -148,13 +144,10 @@ export const SavedEventsProvider = ({ children }) => {
 
     // Register logout listener - clears state IMMEDIATELY when logout happens
     useEffect(() => {
-        console.log('>>> SavedEventsContext: registering logout listener')
         const unsubscribe = onLogout(() => {
-            console.log('>>> SavedEventsContext: logout detected, clearing state')
             clearSavedEvents()
         })
         return () => {
-            console.log('>>> SavedEventsContext: cleanup - unregistering logout listener')
             unsubscribe()
         }
     }, [onLogout, clearSavedEvents])
@@ -162,7 +155,6 @@ export const SavedEventsProvider = ({ children }) => {
     // Register login listener - fetches saved events when user logs in
     useEffect(() => {
         const unsubscribe = onLogin((loggedInUser) => {
-            console.log('>>> SavedEventsContext: login detected, fetching saved events')
             fetchSavedEvents(loggedInUser.$id)
         })
         return unsubscribe

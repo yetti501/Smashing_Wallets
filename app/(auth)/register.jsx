@@ -1,7 +1,9 @@
 import React, { useState } from 'react'
 import {router } from 'expo-router'
-import { View, StyleSheet, Alert } from 'react-native'
+import { View, StyleSheet } from 'react-native'
 import { useAuth } from '../../contexts/AuthContext'
+import { COLORS } from '../../constants/Colors'
+import ThemedModal from '../../components/ThemedModal'
 import ThemedLink from '../../components/ThemedLink'
 import ThemedHeader from '../../components/ThemedHeader'
 import ThemedTextInput from '../../components/ThemedTextInput'
@@ -11,6 +13,7 @@ import ThemedSafeArea from '../../components/ThemedSafeArea'
 export default function RegisterScreen() {
     const { register } = useAuth()
     const [loading, setLoading] = useState(false)
+    const [errorModal, setErrorModal] = useState({ visible: false, title: '', message: '' })
 
     const [formData, setFormData] = useState({
         fullName: '',
@@ -113,7 +116,7 @@ export default function RegisterScreen() {
                     errorMessage = error.message
                 }
         }
-        Alert.alert('Registration Failed', errorMessage)
+        setErrorModal({ visible: true, title: 'Registration Failed', message: errorMessage })
     } finally {
         setLoading(false)
     }
@@ -198,6 +201,16 @@ return (
                 loading={loading}
             />
         </View>
+
+        <ThemedModal
+            visible={errorModal.visible}
+            onClose={() => setErrorModal(prev => ({ ...prev, visible: false }))}
+            icon="alert-circle-outline"
+            iconColor={COLORS.error}
+            title={errorModal.title}
+            message={errorModal.message}
+            buttons={[{ text: 'OK', style: 'primary', onPress: () => setErrorModal(prev => ({ ...prev, visible: false })) }]}
+        />
 </ThemedSafeArea>
 );
 }

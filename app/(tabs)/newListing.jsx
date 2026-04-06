@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
     View,
     StyleSheet,
@@ -10,7 +10,6 @@ import {
     Switch,
     ActivityIndicator,
     Platform,
-    Modal
 } from 'react-native'
 import { router } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
@@ -19,6 +18,7 @@ import ThemedSafeArea from '../../components/ThemedSafeArea'
 import AddressAutocomplete from '../../components/AddressAutocomplete'
 import AddressValidationModal from '../../components/AddressValidationModal'
 import ImagePickerGrid from '../../components/ImagePickerGrid'
+import ThemedModal from '../../components/ThemedModal'
 import { useListings } from '../../contexts/ListingsContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { COLORS, SPACING, RADIUS } from '../../constants/Colors'
@@ -27,12 +27,13 @@ import { imageService } from '../../lib/imageService'
 import googlePlacesService from '../../lib/googlePlacesService'
 
 export default function NewListingScreen() {
-    const { user, sendEmailVerification } = useAuth()
+    const { user, sendEmailVerification, checkUser } = useAuth()
     const { createListing } = useListings()
     const [submitting, setSubmitting] = useState(false)
     const [uploadingImages, setUploadingImages] = useState(false)
     const [verifyModalVisible, setVerifyModalVisible] = useState(false)
     const [verificationSending, setVerificationSending] = useState(false)
+    const [successModalVisible, setSuccessModalVisible] = useState(false)
     
     // Date picker state
     const [showDatePicker, setShowDatePicker] = useState(false)
@@ -67,8 +68,8 @@ export default function NewListingScreen() {
         date: '',
         startDate: '',
         endDate: '',
-        startTime: '',
-        endTime: '',
+        startTime: '8:00 AM',
+        endTime: '2:00 PM',
         price: '',
         contactPhone: '',
         contactEmail: '',
@@ -147,7 +148,6 @@ export default function NewListingScreen() {
             // If not valid, modal will show options
             return false
         } catch (error) {
-            console.error('Error validating address:', error)
             setIsValidating(false)
             setValidationModalVisible(false)
             return true // Allow submission on error
@@ -390,9 +390,9 @@ export default function NewListingScreen() {
         } else {
             // Set default times
             if (pickerType === 'startTime') {
-                initialTime.setHours(9, 0, 0, 0) // 9:00 AM
+                initialTime.setHours(8, 0, 0, 0) // 8:00 AM
             } else {
-                initialTime.setHours(16, 0, 0, 0) // 4:00 PM
+                initialTime.setHours(14, 0, 0, 0) // 2:00 PM
             }
         }
         
@@ -455,22 +455,57 @@ export default function NewListingScreen() {
         return true
     }
 
+    const [verifySuccessModal, setVerifySuccessModal] = useState(false)
+    const [verifyErrorModal, setVerifyErrorModal] = useState({ visible: false, message: '' })
+    const [verifyCooldown, setVerifyCooldown] = useState(0)
+    const cooldownRef = useRef(null)
+
+    // Cleanup cooldown timer on unmount
+    useEffect(() => {
+        return () => {
+            if (cooldownRef.current) clearInterval(cooldownRef.current)
+        }
+    }, [])
+
+    const startCooldown = () => {
+        setVerifyCooldown(60)
+        if (cooldownRef.current) clearInterval(cooldownRef.current)
+        cooldownRef.current = setInterval(() => {
+            setVerifyCooldown(prev => {
+                if (prev <= 1) {
+                    clearInterval(cooldownRef.current)
+                    cooldownRef.current = null
+                    return 0
+                }
+                return prev - 1
+            })
+        }, 1000)
+    }
+
     const handleSendVerification = async () => {
         setVerificationSending(true)
+        setVerifyModalVisible(false)
         try {
             await sendEmailVerification('https://smashingwallets.com/verify-email')
-            setVerifyModalVisible(false)
-            Alert.alert(
-                'Verification Email Sent',
-                'Please check your inbox and spam folder for the verification link. Once verified, you can create listings.',
-                [{ text: 'OK' }]
-            )
+            startCooldown()
+            setVerifySuccessModal(true)
         } catch (error) {
-            let msg = 'Failed to send verification email.'
+            if (error.type === 'user_email_already_verified' || error.message?.includes('already verified')) {
+                // Email is already verified — refresh user data and notify
+                await checkUser()
+                setVerifyErrorModal({
+                    visible: true,
+                    message: 'Your email is already verified! Tap "Create" to submit your event.',
+                    isSuccess: true,
+                })
+                return
+            }
+
+            let msg = 'Failed to send verification email. Please try again.'
             if (error.message?.includes('Too many requests')) {
                 msg = 'Too many requests. Please try again later.'
             }
-            Alert.alert('Error', msg)
+            setVerifyErrorModal({ visible: true, message: msg })
         } finally {
             setVerificationSending(false)
         }
@@ -481,7 +516,11 @@ export default function NewListingScreen() {
             Alert.alert('Error', 'You must be logged in to create an event')
             return
         }
-        if (!user.emailVerification) {
+        // Refresh user data and check latest verification status directly from Appwrite
+        // (can't rely on user state here since setState is async)
+        const { authService } = await import('../../contexts/AuthContext')
+        const freshUser = await authService.getCurrentUser()
+        if (!freshUser || !freshUser.emailVerification) {
             setVerifyModalVisible(true)
             return
         }
@@ -515,12 +554,10 @@ export default function NewListingScreen() {
                     const uploadResult = await imageService.uploadMultipleImages(
                         imageUris,
                         (current, total) => {
-                            console.log(`Uploading image ${current} of ${total}`)
                         }
                     )
                     imageUrls = uploadResult.urls
                 } catch (uploadError) {
-                    console.error('Error uploading images:', uploadError)
                     Alert.alert(
                         'Image Upload Failed',
                         'Failed to upload images. Would you like to continue without images?',
@@ -548,37 +585,32 @@ export default function NewListingScreen() {
             await finishSubmission(imageUrls)
         } catch (error) {
             Alert.alert('Error', error.message || 'Failed to create event')
-            console.error('Error creating listing:', error)
             setSubmitting(false)
         }
     }
 
     const finishSubmission = async (imageUrls) => {
         try {
+            // Append T12:00:00 to date strings so Appwrite stores them as noon UTC,
+            // preventing timezone offsets from shifting the day
+            const toNoonUTC = (dateStr) => dateStr ? `${dateStr}T12:00:00` : dateStr
+
             // Prepare data for submission
+            const eventDate = formData.multiday ? formData.startDate : (formData.date || formData.startDate)
             const listingData = {
                 ...formData,
-                // Set date field for single-day events
-                date: formData.multiday ? formData.startDate : (formData.date || formData.startDate),
+                date: toNoonUTC(eventDate),
+                startDate: toNoonUTC(formData.startDate),
+                endDate: toNoonUTC(formData.endDate),
                 status: 'active',
                 images: imageUrls,
             }
             
             await createListing(listingData)
             
-            Alert.alert('Success', 'Event created successfully!', [
-                {
-                    text: 'OK',
-                    onPress: () => {
-                        setTimeout(() => {
-                            router.replace('/(tabs)/viewListings')
-                        }, 100)
-                    }
-                }
-            ])
+            setSuccessModalVisible(true)
         } catch (error) {
             Alert.alert('Error', error.message || 'Failed to create event')
-            console.error('Error creating listing:', error)
         } finally {
             setSubmitting(false)
         }
@@ -649,6 +681,9 @@ export default function NewListingScreen() {
                             onChangeText={(text) => handleInputChange('title', text)}
                             maxLength={255}
                         />
+                        <Text style={styles.charCount}>
+                            {formData.title.length} / 255
+                        </Text>
                     </View>
 
                     {/* Description */}
@@ -664,6 +699,9 @@ export default function NewListingScreen() {
                             numberOfLines={4}
                             maxLength={5000}
                         />
+                        <Text style={styles.charCount}>
+                            {formData.description.length} / 5,000
+                        </Text>
                     </View>
 
                     {/* Images Section */}
@@ -773,6 +811,8 @@ export default function NewListingScreen() {
                             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                             onChange={handleDateChange}
                             minimumDate={new Date()}
+                            accentColor={COLORS.primary}
+                            themeVariant="light"
                         />
                     )}
 
@@ -783,6 +823,8 @@ export default function NewListingScreen() {
                             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                             onChange={handleStartDateChange}
                             minimumDate={new Date()}
+                            accentColor={COLORS.primary}
+                            themeVariant="light"
                         />
                     )}
 
@@ -793,6 +835,8 @@ export default function NewListingScreen() {
                             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                             onChange={handleEndDateChange}
                             minimumDate={formData.startDate ? new Date(formData.startDate + 'T00:00:00') : new Date()}
+                            accentColor={COLORS.primary}
+                            themeVariant="light"
                         />
                     )}
 
@@ -803,6 +847,8 @@ export default function NewListingScreen() {
                             mode="time"
                             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                             onChange={handleStartTimeChange}
+                            accentColor={COLORS.primary}
+                            themeVariant="light"
                         />
                     )}
 
@@ -812,6 +858,8 @@ export default function NewListingScreen() {
                             mode="time"
                             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                             onChange={handleEndTimeChange}
+                            accentColor={COLORS.primary}
+                            themeVariant="light"
                         />
                     )}
 
@@ -1063,40 +1111,73 @@ export default function NewListingScreen() {
             />
 
             {/* Email Verification Required Modal */}
-            <Modal
+            <ThemedModal
                 visible={verifyModalVisible}
-                transparent={true}
-                animationType="fade"
-                onRequestClose={() => setVerifyModalVisible(false)}
-            >
-                <View style={styles.verifyModalOverlay}>
-                    <View style={styles.verifyModalContent}>
-                        <View style={styles.verifyIconContainer}>
-                            <Ionicons name="mail-outline" size={48} color={COLORS.info} />
-                        </View>
-                        <Text style={styles.verifyModalTitle}>Email Verification Required</Text>
-                        <Text style={styles.verifyModalMessage}>
-                            You need to verify your email address before you can create event listings. This helps keep our community safe from spam.
-                        </Text>
-                        <TouchableOpacity
-                            style={styles.verifyModalSendButton}
-                            onPress={handleSendVerification}
-                            disabled={verificationSending}
-                        >
-                            <Ionicons name="send-outline" size={18} color={COLORS.textInverse} style={{ marginRight: 8 }} />
-                            <Text style={styles.verifyModalSendButtonText}>
-                                {verificationSending ? 'Sending...' : 'Send Verification Email'}
-                            </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={styles.verifyModalCancelButton}
-                            onPress={() => setVerifyModalVisible(false)}
-                        >
-                            <Text style={styles.verifyModalCancelText}>Cancel</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </Modal>
+                onClose={() => setVerifyModalVisible(false)}
+                icon="mail-outline"
+                iconColor={COLORS.info}
+                title="Email Verification Required"
+                message="You need to verify your email address before you can create event listings. This helps keep our community safe from spam."
+                buttons={[
+                    { text: 'Cancel', style: 'cancel', onPress: () => setVerifyModalVisible(false) },
+                    {
+                        text: verificationSending ? 'Sending...' : verifyCooldown > 0 ? `Resend (${verifyCooldown}s)` : 'Verify Email',
+                        style: 'primary',
+                        onPress: handleSendVerification,
+                        disabled: verificationSending || verifyCooldown > 0,
+                    },
+                ]}
+            />
+
+            {/* Verification Email Sent Modal */}
+            <ThemedModal
+                visible={verifySuccessModal}
+                onClose={() => setVerifySuccessModal(false)}
+                icon="mail-outline"
+                iconColor={COLORS.success}
+                title="Verification Email Sent"
+                message="Please check your inbox and spam folder for the verification link. Once verified, you can create listings."
+                buttons={[
+                    {
+                        text: verifyCooldown > 0 ? `Resend (${verifyCooldown}s)` : 'Resend Email',
+                        style: 'cancel',
+                        onPress: () => {
+                            setVerifySuccessModal(false)
+                            handleSendVerification()
+                        },
+                        disabled: verifyCooldown > 0 || verificationSending,
+                    },
+                    { text: 'OK', style: 'primary', onPress: () => setVerifySuccessModal(false) },
+                ]}
+            />
+
+            {/* Verification Email Error/Info Modal */}
+            <ThemedModal
+                visible={verifyErrorModal.visible}
+                onClose={() => setVerifyErrorModal(prev => ({ ...prev, visible: false }))}
+                icon={verifyErrorModal.isSuccess ? 'checkmark-circle-outline' : 'alert-circle-outline'}
+                iconColor={verifyErrorModal.isSuccess ? COLORS.success : COLORS.error}
+                title={verifyErrorModal.isSuccess ? 'Already Verified' : 'Error'}
+                message={verifyErrorModal.message}
+                buttons={[{ text: 'OK', style: 'primary', onPress: () => setVerifyErrorModal(prev => ({ ...prev, visible: false })) }]}
+            />
+
+            {/* Success Modal */}
+            <ThemedModal
+                visible={successModalVisible}
+                onClose={() => {
+                    setSuccessModalVisible(false)
+                    router.replace('/(tabs)/viewListings')
+                }}
+                icon="checkmark-circle-outline"
+                iconColor={COLORS.success}
+                title="Event Created!"
+                message="Your event has been successfully posted and is now visible to the community."
+                buttons={[{ text: 'View My Listings', style: 'primary', onPress: () => {
+                    setSuccessModalVisible(false)
+                    router.replace('/(tabs)/viewListings')
+                }}]}
+            />
         </ThemedSafeArea>
     )
 }
@@ -1139,6 +1220,7 @@ const styles = StyleSheet.create({
         color: '#22C55E',
     },
     helperText: { fontSize: 12, color: COLORS.textSecondary, marginTop: 4 },
+    charCount: { fontSize: 12, color: COLORS.textTertiary, textAlign: 'right', marginTop: 4 },
     input: {
         backgroundColor: COLORS.surface,
         borderWidth: 1,
@@ -1278,68 +1360,5 @@ const styles = StyleSheet.create({
     },
     inputDisabled: {
         opacity: 0.5,
-    },
-    // Email Verification Modal Styles
-    verifyModalOverlay: {
-        flex: 1,
-        backgroundColor: COLORS.overlay,
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 20,
-    },
-    verifyModalContent: {
-        backgroundColor: COLORS.modalBackground,
-        borderRadius: 16,
-        padding: 32,
-        width: '100%',
-        maxWidth: 400,
-        alignItems: 'center',
-    },
-    verifyIconContainer: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        backgroundColor: '#DBEAFE',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 20,
-    },
-    verifyModalTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        color: COLORS.text,
-        textAlign: 'center',
-        marginBottom: 12,
-    },
-    verifyModalMessage: {
-        fontSize: 15,
-        color: COLORS.textSecondary,
-        textAlign: 'center',
-        lineHeight: 22,
-        marginBottom: 24,
-    },
-    verifyModalSendButton: {
-        backgroundColor: COLORS.primary,
-        paddingVertical: 14,
-        paddingHorizontal: 24,
-        borderRadius: 12,
-        width: '100%',
-        alignItems: 'center',
-        flexDirection: 'row',
-        justifyContent: 'center',
-        marginBottom: 12,
-    },
-    verifyModalSendButtonText: {
-        color: COLORS.textInverse,
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    verifyModalCancelButton: {
-        paddingVertical: 12,
-    },
-    verifyModalCancelText: {
-        color: COLORS.textSecondary,
-        fontSize: 15,
-        fontWeight: '500',
     },
 })

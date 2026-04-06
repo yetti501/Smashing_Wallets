@@ -1,17 +1,19 @@
 import { useState } from 'react'
-import { View, StyleSheet, Alert, Text, TouchableOpacity } from 'react-native'
+import { View, StyleSheet, Text, TouchableOpacity } from 'react-native'
 import { router } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { COLORS, SPACING } from '../../constants/Colors'
 import { useAuth } from '../../contexts/AuthContext'
 import ThemedTextInput from '../../components/ThemedTextInput'
 import ThemedButton from '../../components/ThemedButton'
+import ThemedModal from '../../components/ThemedModal'
 import ThemedSafeArea from '../../components/ThemedSafeArea'
 
 export default function ChangePasswordScreen() {
     const { updateUserPassword } = useAuth()
     const [loading, setLoading] = useState(false)
     const [success, setSuccess] = useState(false)
+    const [errorModal, setErrorModal] = useState({ visible: false, title: '', message: '' })
 
     const [formData, setFormData] = useState({
         currentPassword: '',
@@ -82,7 +84,7 @@ export default function ChangePasswordScreen() {
                     errorMessage = error.message
                 }
             }
-            Alert.alert('Error', errorMessage)
+            setErrorModal({ visible: true, title: 'Error', message: errorMessage })
         } finally {
             setLoading(false)
         }
@@ -170,6 +172,16 @@ export default function ChangePasswordScreen() {
                 />
             </View>
             </View>
+
+            <ThemedModal
+                visible={errorModal.visible}
+                onClose={() => setErrorModal(prev => ({ ...prev, visible: false }))}
+                icon="alert-circle-outline"
+                iconColor={COLORS.error}
+                title={errorModal.title}
+                message={errorModal.message}
+                buttons={[{ text: 'OK', style: 'primary', onPress: () => setErrorModal(prev => ({ ...prev, visible: false })) }]}
+            />
         </ThemedSafeArea>
     )
 }

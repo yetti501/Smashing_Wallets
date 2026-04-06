@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { View, StyleSheet, Alert, Text } from 'react-native'
+import { View, StyleSheet, Text } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { COLORS } from '../../constants/Colors'
 import { authService } from '../../contexts/AuthContext'
@@ -7,6 +7,7 @@ import ThemedHeader from '../../components/ThemedHeader'
 import ThemedTextInput from '../../components/ThemedTextInput'
 import ThemedButton from '../../components/ThemedButton'
 import ThemedLink from '../../components/ThemedLink'
+import ThemedModal from '../../components/ThemedModal'
 import ThemedSafeArea from '../../components/ThemedSafeArea'
 
 const RESET_REDIRECT_URL = 'https://smashingwallets.com/reset-password'
@@ -16,6 +17,7 @@ export default function ForgotPasswordScreen() {
     const [emailError, setEmailError] = useState('')
     const [loading, setLoading] = useState(false)
     const [emailSent, setEmailSent] = useState(false)
+    const [errorModal, setErrorModal] = useState({ visible: false, title: '', message: '' })
 
     const validateEmail = (email) => {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -56,7 +58,7 @@ export default function ForgotPasswordScreen() {
                     errorMessage = error.message
                 }
             }
-            Alert.alert('Error', errorMessage)
+            setErrorModal({ visible: true, title: 'Error', message: errorMessage })
         } finally {
             setLoading(false)
         }
@@ -133,6 +135,16 @@ export default function ForgotPasswordScreen() {
                     loading={loading}
                 />
             </View>
+
+            <ThemedModal
+                visible={errorModal.visible}
+                onClose={() => setErrorModal(prev => ({ ...prev, visible: false }))}
+                icon="alert-circle-outline"
+                iconColor={COLORS.error}
+                title={errorModal.title}
+                message={errorModal.message}
+                buttons={[{ text: 'OK', style: 'primary', onPress: () => setErrorModal(prev => ({ ...prev, visible: false })) }]}
+            />
         </ThemedSafeArea>
     )
 }

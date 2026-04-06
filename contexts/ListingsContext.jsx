@@ -116,7 +116,6 @@ export const ListingsProvider = ({ children }) => {
     // Extracted and reusable fetch function
     const fetchListings = async () => {
         try {
-            console.log('>>> ListingsContext: fetching listings')
             const fetchedListings = await listingService.getAllListings([
                 Query.orderDesc('$createdAt')
             ])
@@ -124,7 +123,6 @@ export const ListingsProvider = ({ children }) => {
             setError(null)
         } catch (error) {
             setError(error.message)
-            console.error('Error fetching listings:', error)
         }
     }
 
@@ -140,20 +138,15 @@ export const ListingsProvider = ({ children }) => {
 
     // Register for login/logout events to refresh listings
     useEffect(() => {
-        console.log('>>> ListingsContext: registering login/logout listeners')
-        
         const unsubscribeLogout = onLogout(() => {
-            console.log('>>> ListingsContext: logout detected, refreshing listings')
             fetchListings()
         })
 
         const unsubscribeLogin = onLogin(() => {
-            console.log('>>> ListingsContext: login detected, refreshing listings')
             fetchListings()
         })
 
         return () => {
-            console.log('>>> ListingsContext: cleanup - unregistering listeners')
             unsubscribeLogout()
             unsubscribeLogin()
         }

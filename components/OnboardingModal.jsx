@@ -41,7 +41,6 @@ const OnboardingModal = ({ onComplete }) => {
                 setVisible(true)
             }
         } catch (error) {
-            console.error('Error checking onboarding status:', error)
         } finally {
             setCheckingOnboarding(false)
         }
@@ -51,7 +50,6 @@ const OnboardingModal = ({ onComplete }) => {
         try {
             await AsyncStorage.setItem(ONBOARDING_COMPLETE_KEY, 'true')
         } catch (error) {
-            console.error('Error completing onboarding:', error)
         }
     }
 

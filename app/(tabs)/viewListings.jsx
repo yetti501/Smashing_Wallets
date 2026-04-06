@@ -1,9 +1,10 @@
-import { StyleSheet, View, FlatList, TouchableOpacity, Pressable, Text, Modal, Alert, ActivityIndicator } from 'react-native'
+import { StyleSheet, View, FlatList, TouchableOpacity, Pressable, Text, Modal, ActivityIndicator } from 'react-native'
 import { router, useFocusEffect } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { useState, useCallback, useEffect } from 'react'
 
 import ThemedSafeArea from '../../components/ThemedSafeArea'
+import ThemedModal from '../../components/ThemedModal'
 import ThemedHeader from '../../components/ThemedHeader'
 import ThemedInfoCard from '../../components/ThemedInfoCard'
 // import ListCard from './listCard'
@@ -27,6 +28,7 @@ export default function ViewListingScreen() {
     const { savedListingIds, savedCount } = useSavedEvents()
 
     const [initialLoad, setInitialLoad] = useState(true)
+    const [loginModal, setLoginModal] = useState(false)
     const [filterModalVisible, setFilterModalVisible] = useState(false)
     const [filters, setFilters] = useState({
         eventType: null, 
@@ -35,23 +37,12 @@ export default function ViewListingScreen() {
         showSavedOnly: false
     })
 
-    // DEBUG - remove after confirming fix
-    console.log('=== RENDER STATE ===')
-    console.log('user:', user ? user.$id : null)
-    console.log('savedCount:', savedCount)
-
     useFocusEffect(
         useCallback(() => {
-            console.log('>>> useFocusEffect: screen focused, user:', user?.$id)
             checkUser()  // Re-check auth state when screen is focused
             refreshList().finally(() => setInitialLoad(false))
         }, [])
     )
-
-    // Separately, respond to user changes
-    useEffect(() => {
-        console.log('>>> useEffect: user changed to:', user ? user.$id : null)
-    }, [user])
 
     // Reset saved filter if user logs out
     useEffect(() => {
@@ -119,16 +110,9 @@ export default function ViewListingScreen() {
     // Push to add new listings page 
     const handleAddListing = () => {
         if (!user) {
-            Alert.alert(
-                'Login Required',
-                'Please log in to create an event.',
-                [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Log In', onPress: () => router.push('/login') }
-                ]
-            )
+            setLoginModal(true)
             return
-        } 
+        }
         router.push('/(tabs)/newListing')
     }
 
@@ -143,14 +127,7 @@ export default function ViewListingScreen() {
 
     const handleSavedFilterPress = () => {
         if (!user) {
-            Alert.alert(
-                'Login Required',
-                'Create an account or log in to save events and filter by your favorites.',
-                [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Log In', onPress: () => router.push('/login') }
-                ]
-            )
+            setLoginModal(true)
             return
         }
         setFilters(prev => ({ ...prev, showSavedOnly: !prev.showSavedOnly }))
@@ -331,13 +308,13 @@ export default function ViewListingScreen() {
                     onRefresh={refreshList}
                 />
 
-                {user && (
-                    <ThemedFAB
-                        icon="add"
-                        onPress={handleAddListing}
-                        style={styles.fab}
-                    />
-                )}
+                <ThemedFAB
+                    icon="add"
+                    onPress={handleAddListing}
+                    style={styles.fab}
+                    backgroundColor={user ? COLORS.primary : COLORS.disabled}
+                    iconColor={user ? COLORS.buttonPrimaryText : COLORS.textTertiary}
+                />
 
                 {/* Filter Modal */}
                 <FilterModal
@@ -346,6 +323,34 @@ export default function ViewListingScreen() {
                     filters={filters}
                     setFilters={setFilters}
                     user={user}
+                    setLoginModal={setLoginModal}
+                />
+
+                <ThemedModal
+                    visible={loginModal}
+                    onClose={() => setLoginModal(false)}
+                    icon="person-outline"
+                    iconColor={COLORS.info}
+                    title="Account Required"
+                    message="You need an account to create event listings. Log in or sign up to get started."
+                    buttons={[
+                        {
+                            text: 'Sign Up',
+                            style: 'cancel',
+                            onPress: () => {
+                                setLoginModal(false)
+                                router.push('/register')
+                            },
+                        },
+                        {
+                            text: 'Log In',
+                            style: 'primary',
+                            onPress: () => {
+                                setLoginModal(false)
+                                router.push('/login')
+                            },
+                        },
+                    ]}
                 />
             </View>
         </ThemedSafeArea>
@@ -353,20 +358,11 @@ export default function ViewListingScreen() {
 }
 
 // Filter Modal Content
-const FilterModal = ({ visible, onClose, filters, setFilters, user }) => {
+const FilterModal = ({ visible, onClose, filters, setFilters, user, setLoginModal }) => {
     const handleSavedToggle = () => {
         if (!user) {
-            Alert.alert(
-                'Login Required',
-                'Create an account or log in to save events and filter by your favorites.',
-                [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Log In', onPress: () => {
-                        onClose()
-                        router.push('/login')
-                    }}
-                ]
-            )
+            onClose()
+            setLoginModal(true)
             return
         }
         setFilters({ ...filters, showSavedOnly: !filters.showSavedOnly })

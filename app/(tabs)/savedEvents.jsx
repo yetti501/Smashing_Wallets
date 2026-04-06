@@ -55,7 +55,6 @@ export default function SavedEventsScreen() {
             
             setListings(validListings)
         } catch (error) {
-            console.error('Error fetching saved listings:', error)
         } finally {
             setLoading(false)
         }

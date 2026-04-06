@@ -68,7 +68,6 @@ const ImageGalleryPicker = ({
                 await uploadImages(result.assets.map(asset => asset.uri))
             }
         } catch (error) {
-            console.error('Error picking images:', error)
             Alert.alert('Error', 'Failed to pick images')
         }
     }
@@ -96,7 +95,6 @@ const ImageGalleryPicker = ({
                 await uploadImages([result.assets[0].uri])
             }
         } catch (error) {
-            console.error('Error taking photo:', error)
             Alert.alert('Error', 'Failed to take photo')
         }
     }
@@ -123,7 +121,6 @@ const ImageGalleryPicker = ({
                 )
             }
         } catch (error) {
-            console.error('Error uploading images:', error)
             Alert.alert('Upload Failed', 'Failed to upload images. Please try again.')
         } finally {
             setUploading(false)

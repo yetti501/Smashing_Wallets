@@ -58,8 +58,7 @@ const ImagePickerGrid = ({
         try {
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ['images'],
-                allowsEditing: true,
-                aspect: [16, 9],
+                allowsEditing: false,
                 quality: 0.8,
             })
 
@@ -71,7 +70,6 @@ const ImagePickerGrid = ({
                 onImagesChange([...images, newImage])
             }
         } catch (error) {
-            console.error('Error picking image:', error)
             Alert.alert('Error', 'Failed to select image. Please try again.')
         }
     }

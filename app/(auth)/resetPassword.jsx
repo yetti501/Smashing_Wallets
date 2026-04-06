@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { View, StyleSheet, Alert, Text } from 'react-native'
+import { View, StyleSheet, Text } from 'react-native'
 import { router, useLocalSearchParams } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { COLORS } from '../../constants/Colors'
@@ -8,12 +8,14 @@ import ThemedHeader from '../../components/ThemedHeader'
 import ThemedTextInput from '../../components/ThemedTextInput'
 import ThemedButton from '../../components/ThemedButton'
 import ThemedLink from '../../components/ThemedLink'
+import ThemedModal from '../../components/ThemedModal'
 import ThemedSafeArea from '../../components/ThemedSafeArea'
 
 export default function ResetPasswordScreen() {
     const { userId, secret } = useLocalSearchParams()
     const [loading, setLoading] = useState(false)
     const [resetComplete, setResetComplete] = useState(false)
+    const [errorModal, setErrorModal] = useState({ visible: false, title: '', message: '' })
 
     const [formData, setFormData] = useState({
         password: '',
@@ -92,7 +94,7 @@ export default function ResetPasswordScreen() {
                     errorMessage = error.message
                 }
             }
-            Alert.alert('Reset Failed', errorMessage)
+            setErrorModal({ visible: true, title: 'Reset Failed', message: errorMessage })
         } finally {
             setLoading(false)
         }
@@ -161,6 +163,16 @@ export default function ResetPasswordScreen() {
                     disabled={loading}
                 />
             </View>
+
+            <ThemedModal
+                visible={errorModal.visible}
+                onClose={() => setErrorModal(prev => ({ ...prev, visible: false }))}
+                icon="alert-circle-outline"
+                iconColor={COLORS.error}
+                title={errorModal.title}
+                message={errorModal.message}
+                buttons={[{ text: 'OK', style: 'primary', onPress: () => setErrorModal(prev => ({ ...prev, visible: false })) }]}
+            />
         </ThemedSafeArea>
     )
 }

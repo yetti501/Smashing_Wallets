@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { View, StyleSheet, Modal, Text, TouchableOpacity } from 'react-native'
-import { Ionicons } from '@expo/vector-icons'
+import { View, StyleSheet } from 'react-native'
 import { router } from 'expo-router'
 import { useAuth } from '../../contexts/AuthContext'
 import { COLORS } from '../../constants/Colors'
@@ -9,6 +8,7 @@ import ThemedTextInput from '../../components/ThemedTextInput'
 import ThemedButton from '../../components/ThemedButton'
 import ThemedLink from '../../components/ThemedLink'
 import ThemedSafeArea from '../../components/ThemedSafeArea'
+import ThemedModal from '../../components/ThemedModal'
 
 export default function LoginScreen() {
     const { login } = useAuth()
@@ -171,28 +171,15 @@ export default function LoginScreen() {
                 </View>
 
                 {/* Error Modal */}
-                <Modal
+                <ThemedModal
                     visible={errorModal.visible}
-                    transparent={true}
-                    animationType="fade"
-                    onRequestClose={() => setErrorModal(prev => ({ ...prev, visible: false }))}
-                >
-                    <View style={styles.modalOverlay}>
-                        <View style={styles.modalContent}>
-                            <View style={styles.modalIconContainer}>
-                                <Ionicons name="alert-circle-outline" size={48} color={COLORS.error} />
-                            </View>
-                            <Text style={styles.modalTitle}>{errorModal.title}</Text>
-                            <Text style={styles.modalMessage}>{errorModal.message}</Text>
-                            <TouchableOpacity
-                                style={styles.modalButton}
-                                onPress={() => setErrorModal(prev => ({ ...prev, visible: false }))}
-                            >
-                                <Text style={styles.modalButtonText}>Try Again</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </Modal>
+                    onClose={() => setErrorModal(prev => ({ ...prev, visible: false }))}
+                    icon="alert-circle-outline"
+                    iconColor={COLORS.error}
+                    title={errorModal.title}
+                    message={errorModal.message}
+                    buttons={[{ text: 'Try Again', style: 'primary', onPress: () => setErrorModal(prev => ({ ...prev, visible: false })) }]}
+                />
         </ThemedSafeArea>
     )
 
@@ -202,56 +189,5 @@ const styles = StyleSheet.create({
     form: {
         width: '100%',
         gap: 16
-    },
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: COLORS.overlay,
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 20,
-    },
-    modalContent: {
-        backgroundColor: COLORS.modalBackground,
-        borderRadius: 16,
-        padding: 32,
-        width: '100%',
-        maxWidth: 400,
-        alignItems: 'center',
-    },
-    modalIconContainer: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        backgroundColor: '#FEE2E2',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 20,
-    },
-    modalTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        color: COLORS.text,
-        textAlign: 'center',
-        marginBottom: 12,
-    },
-    modalMessage: {
-        fontSize: 15,
-        color: COLORS.textSecondary,
-        textAlign: 'center',
-        lineHeight: 22,
-        marginBottom: 24,
-    },
-    modalButton: {
-        backgroundColor: COLORS.primary,
-        paddingVertical: 14,
-        paddingHorizontal: 48,
-        borderRadius: 12,
-        width: '100%',
-        alignItems: 'center',
-    },
-    modalButtonText: {
-        color: COLORS.textInverse,
-        fontSize: 16,
-        fontWeight: '600',
     },
 })

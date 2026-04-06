@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons'
 import DateTimePicker from '@react-native-community/datetimepicker'
 
 import ThemedSafeArea from '../../components/ThemedSafeArea'
+import ThemedModal from '../../components/ThemedModal'
 import ImagePickerGrid from '../../components/ImagePickerGrid'
 import { useListings } from '../../contexts/ListingsContext'
 import { useAuth } from '../../contexts/AuthContext'
@@ -71,6 +72,7 @@ export default function EditListingScreen() {
         status: 'active',
     })
 
+    const [discardModal, setDiscardModal] = useState(false)
     const [tagInput, setTagInput] = useState('')
 
     useEffect(() => {
@@ -139,7 +141,6 @@ export default function EditListingScreen() {
 
         } catch (error) {
             Alert.alert('Error', 'Failed to load event details')
-            console.error('Error loading listing:', error)
             router.back()
         } finally {
             setLoading(false)
@@ -205,7 +206,6 @@ export default function EditListingScreen() {
         }
         
         if (isNaN(date.getTime())) {
-            console.error('Invalid date:', dateString)
             return 'Invalid Date'
         }
         
@@ -448,12 +448,10 @@ export default function EditListingScreen() {
                     const uploadResult = await imageService.uploadMultipleImages(
                         imageUris,
                         (current, total) => {
-                            console.log(`Uploading image ${current} of ${total}`)
                         }
                     )
                     finalImageUrls = [...finalImageUrls, ...uploadResult.urls]
                 } catch (uploadError) {
-                    console.error('Error uploading images:', uploadError)
                     Alert.alert(
                         'Image Upload Failed',
                         'Failed to upload new images. Would you like to continue without the new images?',
@@ -484,30 +482,39 @@ export default function EditListingScreen() {
                     const fileIds = imagesToDelete.map(img => img.fileId).filter(Boolean)
                     if (fileIds.length > 0) {
                         await imageService.deleteMultipleImages(fileIds)
-                        console.log('Deleted old images:', fileIds)
                     }
                 } catch (deleteError) {
-                    // Log but don't fail the update
-                    console.error('Error deleting old images:', deleteError)
+                    // Don't fail the update for image deletion errors
                 }
             }
             
             await finishUpdate(finalImageUrls)
         } catch (error) {
             Alert.alert('Error', error.message || 'Failed to update event')
-            console.error('Error updating listing:', error)
             setSubmitting(false)
         }
     }
 
     const finishUpdate = async (imageUrls) => {
         try {
+            // Append T12:00:00 to date strings so Appwrite stores them as noon UTC,
+            // preventing timezone offsets from shifting the day
+            const toNoonUTC = (dateStr) => {
+                if (!dateStr || dateStr.includes('T')) return dateStr
+                return `${dateStr}T12:00:00`
+            }
+
             // Prepare update data
             const updates = {}
-            
+
             Object.keys(formData).forEach(key => {
                 if (formData[key] !== originalListing[key]) {
-                    updates[key] = formData[key]
+                    // Fix date fields to prevent timezone shift
+                    if (['date', 'startDate', 'endDate'].includes(key)) {
+                        updates[key] = toNoonUTC(formData[key])
+                    } else {
+                        updates[key] = formData[key]
+                    }
                 }
             })
 
@@ -536,25 +543,13 @@ export default function EditListingScreen() {
             ])
         } catch (error) {
             Alert.alert('Error', error.message || 'Failed to update event')
-            console.error('Error updating listing:', error)
         } finally {
             setSubmitting(false)
         }
     }
 
     const handleCancel = () => {
-        Alert.alert(
-            'Discard Changes',
-            'Are you sure you want to discard your changes?',
-            [
-                { text: 'Continue Editing', style: 'cancel' },
-                { 
-                    text: 'Discard', 
-                    style: 'destructive',
-                    onPress: () => router.back()
-                }
-            ]
-        )
+        setDiscardModal(true)
     }
 
     if (loading) {
@@ -1029,6 +1024,27 @@ export default function EditListingScreen() {
                     <View style={{ height: 50 }} />
                 </ScrollView>
             </View>
+
+            <ThemedModal
+                visible={discardModal}
+                onClose={() => setDiscardModal(false)}
+                icon="close-circle-outline"
+                iconColor={COLORS.warning}
+                title="Discard Changes"
+                message="Are you sure you want to discard your changes?"
+                buttons={[
+                    {
+                        text: 'Continue Editing',
+                        style: 'cancel',
+                        onPress: () => setDiscardModal(false),
+                    },
+                    {
+                        text: 'Discard',
+                        style: 'destructive',
+                        onPress: () => router.back(),
+                    },
+                ]}
+            />
         </ThemedSafeArea>
     )
 }

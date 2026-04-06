@@ -184,6 +184,24 @@ export default function MapScreen() {
     const getUnitLabel = () => distanceUnit === 'miles' ? 'mi' : 'km'
 
     // ─────────────────────────────────────────────
+    // ZOOM MAP TO MATCH SEARCH RADIUS
+    // ─────────────────────────────────────────────
+    const zoomToRadius = (radiusValue) => {
+        const radiusKm = distanceUnit === 'miles' ? milesToKm(radiusValue) : radiusValue
+        // 1 degree latitude ≈ 111 km; multiply by 2 to show full diameter, add padding
+        const latDelta = (radiusKm / 111) * 2.2
+        const center = searchCenter || userLocation
+        if (mapRef.current && center) {
+            mapRef.current.animateToRegion({
+                latitude: center.latitude,
+                longitude: center.longitude,
+                latitudeDelta: latDelta,
+                longitudeDelta: latDelta,
+            }, 500)
+        }
+    }
+
+    // ─────────────────────────────────────────────
     // HAVERSINE DISTANCE CALCULATION
     // ─────────────────────────────────────────────
     // Returns distance in km between two lat/lng points
@@ -236,10 +254,6 @@ export default function MapScreen() {
             let cancelled = false
             const focusId = Date.now() // unique ID to track this specific focus cycle in logs
 
-            console.log(`[LOC ${focusId}] ── useFocusEffect fired ──`)
-            console.log(`[LOC ${focusId}] hasLoadedOnce: ${hasLoadedLocationOnce}`)
-            console.log(`[LOC ${focusId}] cancelled: ${cancelled}`)
-
             // Always reset transient UI state on focus
             setSelectedEvent(null)
             setShowSearchButton(false)
@@ -247,24 +261,17 @@ export default function MapScreen() {
             // Only remount MapView if the session is likely stale (5+ min away)
             // or on first load. Quick tab switches just re-animate.
             const timeSinceActive = Date.now() - lastActiveTimestamp.current
-            console.log(`[LOC ${focusId}] timeSinceActive: ${timeSinceActive}ms (threshold: ${STALE_THRESHOLD}ms)`)
             if (timeSinceActive > STALE_THRESHOLD) {
-                console.log(`[LOC ${focusId}] Session stale — remounting MapView`)
                 setMapKey((prev) => prev + 1)
             }
             lastActiveTimestamp.current = Date.now()
 
             // Only show the loading spinner on the very first load
             if (!hasLoadedLocationOnce) {
-                console.log(`[LOC ${focusId}] First load — showing loading spinner`)
                 setLoading(true)
-            } else {
-                console.log(`[LOC ${focusId}] Already loaded once — skipping loading spinner`)
             }
 
             const applyRegion = (region, source) => {
-                console.log(`[LOC ${focusId}] applyRegion called (source: ${source})`, JSON.stringify(region))
-                console.log(`[LOC ${focusId}] cancelled at applyRegion: ${cancelled}`)
                 setUserLocation(region)
                 setSearchCenter(region)
                 setCurrentMapRegion(region)
@@ -273,51 +280,36 @@ export default function MapScreen() {
             }
 
             const getLocation = async () => {
-                console.log(`[LOC ${focusId}] getLocation() started`)
-
                 try {
                     // Check current permission status first (instant, no system dialog)
-                    console.log(`[LOC ${focusId}] Checking foreground permissions...`)
                     let { status } = await Location.getForegroundPermissionsAsync()
-                    console.log(`[LOC ${focusId}] Current permission status: "${status}"`)
 
                     // Only show the system request dialog if not yet granted
                     if (status !== 'granted') {
-                        console.log(`[LOC ${focusId}] Not granted — requesting permission...`)
                         const response = await Location.requestForegroundPermissionsAsync()
                         status = response.status
-                        console.log(`[LOC ${focusId}] Request result: "${status}"`)
                     }
 
                     if (status !== 'granted') {
-                        console.log(`[LOC ${focusId}] Permission denied — falling back to DEFAULT_LOCATION`)
                         if (!cancelled) applyRegion(DEFAULT_LOCATION, 'permission-denied')
                         return
                     }
 
                     // Try cached location first (instant), fall back to fresh GPS
-                    console.log(`[LOC ${focusId}] Trying getLastKnownPositionAsync...`)
                     const startTime = Date.now()
                     let location = null
 
                     const lastKnown = await Location.getLastKnownPositionAsync()
                     if (lastKnown) {
                         const ageMs = Date.now() - lastKnown.timestamp
-                        console.log(`[LOC ${focusId}] lastKnown found, age: ${Math.round(ageMs / 1000)}s, coords: ${lastKnown.coords.latitude}, ${lastKnown.coords.longitude}`)
                         // Use cached position if it's less than 2 minutes old
                         if (ageMs < 120000) {
-                            console.log(`[LOC ${focusId}] Using cached position (fresh enough)`)
                             location = lastKnown
-                        } else {
-                            console.log(`[LOC ${focusId}] Cached position too old, fetching fresh...`)
                         }
-                    } else {
-                        console.log(`[LOC ${focusId}] No cached position available`)
                     }
 
                     // If no usable cached position, get a fresh one
                     if (!location) {
-                        console.log(`[LOC ${focusId}] Calling getCurrentPositionAsync (8s timeout)...`)
                         location = await Promise.race([
                             Location.getCurrentPositionAsync({
                                 accuracy: Location.Accuracy.Balanced,
@@ -327,11 +319,6 @@ export default function MapScreen() {
                             ),
                         ])
                     }
-
-                    const elapsed = Date.now() - startTime
-                    console.log(`[LOC ${focusId}] getCurrentPosition succeeded in ${elapsed}ms`)
-                    console.log(`[LOC ${focusId}] coords: ${location.coords.latitude}, ${location.coords.longitude}`)
-                    console.log(`[LOC ${focusId}] cancelled after getCurrentPosition: ${cancelled}`)
 
                     if (!cancelled) {
                         const userRegion = {
@@ -348,19 +335,12 @@ export default function MapScreen() {
 
                         // On subsequent tab focuses, animate the map to the user's location
                         if (hasLoadedLocationOnce && mapRef.current) {
-                            console.log(`[LOC ${focusId}] Animating map to user location`)
                             mapRef.current.animateToRegion(userRegion, 500)
                         }
                         hasLoadedLocationOnce = true
-                        console.log(`[LOC ${focusId}] ── Location flow complete (GPS) ──`)
-                    } else {
-                        console.log(`[LOC ${focusId}] ── Cancelled before applying GPS location ──`)
                     }
                 } catch (error) {
-                    console.error(`[LOC ${focusId}] Location error:`, error.message)
-                    console.log(`[LOC ${focusId}] cancelled at catch: ${cancelled}`)
                     if (!cancelled) {
-                        console.log(`[LOC ${focusId}] Falling back to DEFAULT_LOCATION`)
                         applyRegion(DEFAULT_LOCATION, 'error-fallback')
                     }
                 }
@@ -369,7 +349,6 @@ export default function MapScreen() {
             getLocation()
 
             return () => {
-                console.log(`[LOC ${focusId}] ── cleanup: setting cancelled = true ──`)
                 cancelled = true
             }
         }, [])
@@ -957,7 +936,10 @@ export default function MapScreen() {
                                                 styles.radiusOption,
                                                 searchRadius === radius && styles.radiusOptionActive
                                             ]}
-                                            onPress={() => setSearchRadius(radius)}
+                                            onPress={() => {
+                                                setSearchRadius(radius)
+                                                zoomToRadius(radius)
+                                            }}
                                         >
                                             <Text style={[
                                                 styles.radiusOptionText,

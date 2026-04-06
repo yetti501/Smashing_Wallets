@@ -214,9 +214,6 @@ export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null)
     const [loading, setLoading] = useState(true)
 
-        console.log('>>> AuthProvider render, user:', user ? user.$id : null)
-
-    
     // Store logout and login listeners
     const logoutListenersRef = useRef(new Set())
     const loginListenersRef = useRef(new Set())
@@ -235,13 +232,10 @@ export const AuthProvider = ({ children }) => {
     }, [initialized])
 
     const checkUser = async () => {
-    console.log('>>> AuthContext: checkUser called')
     try {
         const currentUser = await authService.getCurrentUser()
-        console.log('>>> AuthContext: checkUser got user:', currentUser ? currentUser.$id : null)
         setUser(currentUser)
     } catch (error) {
-        console.log('>>> AuthContext: checkUser error:', error)
         setUser(null)
     } finally {
         setLoading(false)
@@ -278,13 +272,10 @@ export const AuthProvider = ({ children }) => {
      * Notify all logout listeners
      */
     const notifyLogoutListeners = useCallback(() => {
-    console.log('>>> AuthContext: notifyLogoutListeners called, listeners:', logoutListenersRef.current.size)
     logoutListenersRef.current.forEach(callback => {
         try {
-            console.log('>>> AuthContext: calling a logout listener')
             callback()
         } catch (error) {
-            console.error('Error in logout listener:', error)
         }
     })
 }, [])
@@ -297,7 +288,6 @@ export const AuthProvider = ({ children }) => {
             try {
                 callback(loggedInUser)
             } catch (error) {
-                console.error('Error in login listener:', error)
             }
         })
     }, [])
@@ -329,7 +319,6 @@ export const AuthProvider = ({ children }) => {
         try {
             await authService.sendEmailVerification('https://smashingwallets.com/verify-email')
         } catch (error) {
-            console.log('Email verification send failed (non-critical):', error.message)
         }
         sendTransactionalEmail('welcome', email, name)
 
@@ -337,22 +326,15 @@ export const AuthProvider = ({ children }) => {
     }
 
     const logout = async () => {
-        console.log('>>> AuthContext: logout called')
-        
         // Clear user state FIRST
         setUser(null)
         
         try {
             await authService.logout()
-            console.log('>>> AuthContext: appwrite logout successful')
         } catch (error) {
-            console.error('Server logout error:', error)
         }
         
         // Verify user is actually logged out
-        const checkResult = await authService.getCurrentUser()
-        console.log('>>> AuthContext: after logout, getCurrentUser returns:', checkResult)
-        
         notifyLogoutListeners()
         // router.replace('/')
     }

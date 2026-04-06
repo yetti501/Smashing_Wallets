@@ -11,6 +11,7 @@ import ThemedInfoCard from '../../components/ThemedInfoCard'
 import ThemedInfoContent from '../../components/ThemedInfoContent'
 import ThemedTextInput from '../../components/ThemedTextInput'
 import ThemedSafeArea from '../../components/ThemedSafeArea'
+import ThemedModal from '../../components/ThemedModal'
 
 export default function ProfileScreen() {
     const { user, logout, updateUserName, updateUserPhone, updateUserPreferences, deleteAccount, sendEmailVerification, checkUser, loading: authLoading } = useAuth()
@@ -410,42 +411,18 @@ export default function ProfileScreen() {
             />
 
             {/* Logout Confirmation Modal */}
-            <Modal
+            <ThemedModal
                 visible={logoutModalVisible}
-                transparent={true}
-                animationType="fade"
-                onRequestClose={() => setLogoutModalVisible(false)}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <View style={styles.logoutIconContainer}>
-                            <Ionicons name="log-out-outline" size={48} color={COLORS.primary} />
-                        </View>
-                        <Text style={styles.themedModalTitle}>Log Out</Text>
-                        <Text style={styles.themedModalMessage}>
-                            Are you sure you want to log out of your account?
-                        </Text>
-                        <View style={styles.modalButtons}>
-                            <TouchableOpacity
-                                style={[styles.modalButton, styles.themedCancelButton]}
-                                onPress={() => setLogoutModalVisible(false)}
-                                disabled={loading}
-                            >
-                                <Text style={styles.themedCancelButtonText}>Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.modalButton, styles.logoutButton]}
-                                onPress={confirmLogout}
-                                disabled={loading}
-                            >
-                                <Text style={styles.themedActionButtonText}>
-                                    {loading ? 'Logging out...' : 'Log Out'}
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
+                onClose={() => setLogoutModalVisible(false)}
+                icon="log-out-outline"
+                iconColor={COLORS.primary}
+                title="Log Out"
+                message="Are you sure you want to log out of your account?"
+                buttons={[
+                    { text: 'Cancel', style: 'cancel', onPress: () => setLogoutModalVisible(false), disabled: loading },
+                    { text: loading ? 'Logging out...' : 'Log Out', style: 'primary', onPress: confirmLogout, disabled: loading },
+                ]}
+            />
 
             {/* Edit Modal */}
             <Modal
@@ -517,74 +494,42 @@ export default function ProfileScreen() {
             </Modal>
 
             {/* Delete Account Confirmation Modal */}
-            <Modal
+            <ThemedModal
                 visible={deleteModalVisible}
-                transparent={true}
-                animationType="fade"
-                onRequestClose={handleCloseDeleteModal}
+                onClose={handleCloseDeleteModal}
+                icon="warning-outline"
+                iconColor={COLORS.error}
+                title="Delete Account"
+                message="This will permanently delete your account and all associated data including:"
+                buttons={[
+                    { text: 'Cancel', style: 'cancel', onPress: handleCloseDeleteModal, disabled: loading },
+                    { text: loading ? 'Deleting...' : 'Delete Account', style: 'destructive', onPress: confirmDeleteAccount, disabled: loading || deleteConfirmText !== 'DELETE' },
+                ]}
             >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <View style={styles.deleteIconCircle}>
-                            <Ionicons name="warning-outline" size={48} color={COLORS.error} />
-                        </View>
-
-                        <Text style={styles.themedModalTitle}>Delete Account</Text>
-
-                        <Text style={styles.themedModalMessage}>
-                            This will permanently delete your account and all associated data including:
-                        </Text>
-
-                        <View style={styles.deleteList}>
-                            <Text style={styles.deleteListItem}>Your profile information</Text>
-                            <Text style={styles.deleteListItem}>All your event listings</Text>
-                            <Text style={styles.deleteListItem}>Your saved preferences</Text>
-                        </View>
-
-                        <Text style={styles.deleteModalWarning}>
-                            This action cannot be undone.
-                        </Text>
-
-                        <Text style={styles.deleteModalConfirmLabel}>
-                            Type <Text style={styles.deleteKeyword}>DELETE</Text> to confirm:
-                        </Text>
-
-                        <ThemedTextInput
-                            label=""
-                            placeholder="Type DELETE here"
-                            value={deleteConfirmText}
-                            onChangeText={setDeleteConfirmText}
-                            autoCapitalize="characters"
-                            editable={!loading}
-                            placeholderTextColor={COLORS.textSecondary}
-                        />
-
-                        <View style={styles.modalButtons}>
-                            <TouchableOpacity
-                                style={[styles.modalButton, styles.themedCancelButton]}
-                                onPress={handleCloseDeleteModal}
-                                disabled={loading}
-                            >
-                                <Text style={styles.themedCancelButtonText}>Cancel</Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={[
-                                    styles.modalButton,
-                                    styles.deleteButton,
-                                    deleteConfirmText !== 'DELETE' && styles.deleteButtonDisabled
-                                ]}
-                                onPress={confirmDeleteAccount}
-                                disabled={loading || deleteConfirmText !== 'DELETE'}
-                            >
-                                <Text style={styles.themedActionButtonText}>
-                                    {loading ? 'Deleting...' : 'Delete Account'}
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
+                <View style={styles.deleteList}>
+                    <Text style={styles.deleteListItem}>Your profile information</Text>
+                    <Text style={styles.deleteListItem}>All your event listings</Text>
+                    <Text style={styles.deleteListItem}>Your saved preferences</Text>
                 </View>
-            </Modal>
+
+                <Text style={styles.deleteModalWarning}>
+                    This action cannot be undone.
+                </Text>
+
+                <Text style={styles.deleteModalConfirmLabel}>
+                    Type <Text style={styles.deleteKeyword}>DELETE</Text> to confirm:
+                </Text>
+
+                <ThemedTextInput
+                    label=""
+                    placeholder="Type DELETE here"
+                    value={deleteConfirmText}
+                    onChangeText={setDeleteConfirmText}
+                    autoCapitalize="characters"
+                    editable={!loading}
+                    placeholderTextColor={COLORS.textSecondary}
+                />
+            </ThemedModal>
         </ThemedSafeArea>
     )
 }
@@ -707,49 +652,6 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         alignItems: 'center',
     },
-    // Themed modal shared styles
-    themedModalTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        color: COLORS.text,
-        textAlign: 'center',
-        marginBottom: 12,
-    },
-    themedModalMessage: {
-        fontSize: 15,
-        color: COLORS.textSecondary,
-        textAlign: 'center',
-        lineHeight: 22,
-        marginBottom: 20,
-    },
-    themedCancelButton: {
-        backgroundColor: COLORS.surfaceSecondary,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-    },
-    themedCancelButtonText: {
-        fontSize: 16,
-        color: COLORS.text,
-        fontWeight: '600',
-    },
-    themedActionButtonText: {
-        fontSize: 16,
-        color: COLORS.textInverse,
-        fontWeight: '600',
-    },
-    // Logout modal
-    logoutIconContainer: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        backgroundColor: '#FFF1F0',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 20,
-    },
-    logoutButton: {
-        backgroundColor: COLORS.primary,
-    },
     // Edit modal
     cancelButton: {
         backgroundColor: COLORS.surfaceSecondary,
@@ -860,15 +762,6 @@ const styles = StyleSheet.create({
         borderBottomWidth: 0,
     },
     // Delete Modal Styles
-    deleteIconCircle: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        backgroundColor: '#FEE2E2',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 20,
-    },
     deleteList: {
         alignSelf: 'stretch',
         marginBottom: 16,
@@ -898,16 +791,5 @@ const styles = StyleSheet.create({
     deleteKeyword: {
         fontWeight: 'bold',
         color: COLORS.error,
-    },
-    deleteButton: {
-        backgroundColor: COLORS.error,
-    },
-    deleteButtonDisabled: {
-        backgroundColor: COLORS.disabled,
-    },
-    deleteButtonText: {
-        fontSize: 16,
-        color: '#fff',
-        fontWeight: '600',
     },
 })
