@@ -14,6 +14,7 @@ import ThemedFAB from '../../components/ThemedFAB'
 import { useListings } from '../../contexts/ListingsContext'
 import { useSavedEvents } from '../../contexts/SavedEventsContext'
 import { useAuth } from '../../contexts/AuthContext'
+import { useBlockedUsers } from '../../contexts/BlockedUsersContext'
 import { COLORS, SPACING } from '../../constants/Colors'
 import { EVENT_TYPES, EVENT_TYPE_LABELS } from '../../lib/appwrite'
 
@@ -26,6 +27,7 @@ export default function ViewListingScreen() {
         refreshList
     } = useListings()
     const { savedListingIds, savedCount } = useSavedEvents()
+    const { blockedUserIds } = useBlockedUsers()
 
     const [initialLoad, setInitialLoad] = useState(true)
     const [loginModal, setLoginModal] = useState(false)
@@ -56,7 +58,12 @@ export default function ViewListingScreen() {
 
     const getFilteredListings = () => {
         let filtered = [...listings]
-        
+
+        // Filter out listings from blocked users
+        if (blockedUserIds.size > 0) {
+            filtered = filtered.filter(l => !blockedUserIds.has(l.userId))
+        }
+
         // Filter by saved events only
         if (filters.showSavedOnly) {
             filtered = filtered.filter(l => savedListingIds.has(l.$id))

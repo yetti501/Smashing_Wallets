@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { AuthProvider } from '../contexts/AuthContext'
 import { ListingsProvider } from '../contexts/ListingsContext'
 import { SavedEventsProvider } from '../contexts/SavedEventsContext'
+import { BlockedUsersProvider } from '../contexts/BlockedUsersContext'
 
 const TabsLayout = () => {
     const insets = useSafeAreaInsets()
@@ -99,9 +100,11 @@ const RootLayout = () => {
         <SafeAreaProvider>
             <AuthProvider>
                 <SavedEventsProvider>
-                    <ListingsProvider> 
-                        <AppContent />
-                    </ListingsProvider>
+                    <BlockedUsersProvider>
+                        <ListingsProvider>
+                            <AppContent />
+                        </ListingsProvider>
+                    </BlockedUsersProvider>
                 </SavedEventsProvider>
             </AuthProvider>
         </SafeAreaProvider>

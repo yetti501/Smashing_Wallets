@@ -9,6 +9,7 @@ import ThemedInfoCard from '../../components/ThemedInfoCard'
 import ImageGallery from '../../components/ImageGallery'
 import SaveButton from '../../components/SaveButton'
 import ShareButton from '../../components/ShareButton'
+import MoreOptionsButton from '../../components/MoreOptionsButton'
 import { useListings } from '../../contexts/ListingsContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { COLORS, SPACING, RADIUS } from '../../constants/Colors'
@@ -291,20 +292,25 @@ export default function ListingDetailsScreen() {
                         )}
                     </View>
 
-                    {/* Save and Share Buttons */}
+                    {/* Save, Share, and More Options Buttons */}
                     <View style={styles.actionButtonsContainer}>
-                        <ShareButton 
+                        <ShareButton
                             listing={listing}
                             size="medium"
                             variant="icon"
                         />
                         {!isOwner && (
-                            <SaveButton 
+                            <SaveButton
                                 listingId={listing.$id}
                                 size="medium"
                                 variant="icon"
                             />
                         )}
+                        <MoreOptionsButton
+                            listing={listing}
+                            size="medium"
+                            variant="icon"
+                        />
                     </View>
                 </View>
 

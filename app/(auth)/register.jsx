@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import {router } from 'expo-router'
-import { View, StyleSheet } from 'react-native'
+import { View, StyleSheet, TouchableOpacity, Text, Linking } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import { useAuth } from '../../contexts/AuthContext'
 import { COLORS } from '../../constants/Colors'
 import ThemedModal from '../../components/ThemedModal'
@@ -17,16 +18,18 @@ export default function RegisterScreen() {
 
     const [formData, setFormData] = useState({
         fullName: '',
-        email: '', 
+        email: '',
         password: '',
         confirmPassword: ''
     })
+    const [agreedToTerms, setAgreedToTerms] = useState(false)
 
     const [errors, setErrors] = useState({
         fullName: '',
         email: '',
         password: '',
-        confirmPassword: ''
+        confirmPassword: '',
+        terms: '',
     })
 
     const updateFormData = (field, value) => {
@@ -50,10 +53,11 @@ export default function RegisterScreen() {
 
     const formValidation = () => {
         const newErrors = {
-            fullName: '', 
-            email: '', 
+            fullName: '',
+            email: '',
             password: '',
-            confirmPassword: ''
+            confirmPassword: '',
+            terms: '',
         }
 
         let isValid = true
@@ -85,6 +89,11 @@ export default function RegisterScreen() {
             isValid = false
         } else if(formData.password !== formData.confirmPassword) {
             newErrors.confirmPassword = 'Passwords do not match'
+            isValid = false
+        }
+        // Validate EULA agreement
+        if (!agreedToTerms) {
+            newErrors.terms = 'You must agree to the terms to create an account'
             isValid = false
         }
 
@@ -185,6 +194,46 @@ return (
                 error={errors.confirmPassword}
                 isPassword={true}
             />
+            {/* EULA & Age Confirmation */}
+            <View style={styles.termsContainer}>
+                <TouchableOpacity
+                    style={styles.checkbox}
+                    onPress={() => {
+                        setAgreedToTerms(!agreedToTerms)
+                        if (errors.terms) setErrors(prev => ({ ...prev, terms: '' }))
+                    }}
+                    activeOpacity={0.7}
+                    disabled={loading}
+                >
+                    <Ionicons
+                        name={agreedToTerms ? 'checkbox' : 'square-outline'}
+                        size={24}
+                        color={errors.terms ? COLORS.error : agreedToTerms ? COLORS.primary : COLORS.textSecondary}
+                    />
+                </TouchableOpacity>
+                <View style={styles.termsTextContainer}>
+                    <Text style={styles.termsText}>
+                        I am 18 years or older and agree to the{' '}
+                        <Text
+                            style={styles.termsLink}
+                            onPress={() => router.push('/termsOfService')}
+                        >
+                            Terms of Service
+                        </Text>
+                        {' '}and{' '}
+                        <Text
+                            style={styles.termsLink}
+                            onPress={() => router.push('/privacyPolicy')}
+                        >
+                            Privacy Policy
+                        </Text>
+                    </Text>
+                    {!!errors.terms && (
+                        <Text style={styles.termsError}>{errors.terms}</Text>
+                    )}
+                </View>
+            </View>
+
             {/* Submit Button */}
             <ThemedButton
                 action={handleRegister}
@@ -219,5 +268,30 @@ const styles = StyleSheet.create({
     form: {
         width: '100%',
         gap: 16
+    },
+    termsContainer: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 10,
+    },
+    checkbox: {
+        paddingTop: 2,
+    },
+    termsTextContainer: {
+        flex: 1,
+    },
+    termsText: {
+        fontSize: 14,
+        color: COLORS.textSecondary,
+        lineHeight: 20,
+    },
+    termsLink: {
+        color: COLORS.primary,
+        fontWeight: '600',
+    },
+    termsError: {
+        fontSize: 13,
+        color: COLORS.error,
+        marginTop: 4,
     },
 });

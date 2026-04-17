@@ -26,6 +26,7 @@ import { useFocusEffect } from '@react-navigation/native'
 import { useListings } from '../../contexts/ListingsContext'
 import googlePlacesService from '../../lib/googlePlacesService'
 import { useAuth } from '../../contexts/AuthContext'
+import { useBlockedUsers } from '../../contexts/BlockedUsersContext'
 import { COLORS, SPACING, RADIUS, SHADOWS } from '../../constants/Colors'
 import { EVENT_TYPES, EVENT_TYPE_LABELS, EVENT_TYPE_ICONS } from '../../lib/appwrite'
 
@@ -115,6 +116,7 @@ let hasLoadedLocationOnce = false
 export default function MapScreen() {
     const { listings } = useListings()
     const { user } = useAuth()
+    const { blockedUserIds } = useBlockedUsers()
 
     // ── Location State ──
     // userLocation: the device's actual GPS coordinates (used for distance calculations)
@@ -554,6 +556,9 @@ export default function MapScreen() {
             // Must have coordinates to show on map
             if (!event.latitude || !event.longitude) return false
 
+            // Hide listings from blocked users
+            if (blockedUserIds.size > 0 && blockedUserIds.has(event.userId)) return false
+
             // Filter by distance from search center
             const distance = calculateDistance(
                 searchCenter.latitude,
@@ -575,7 +580,7 @@ export default function MapScreen() {
 
             return true
         })
-    }, [listings, searchCenter, searchRadius, selectedEventType, showPastEvents, distanceUnit])
+    }, [listings, searchCenter, searchRadius, selectedEventType, showPastEvents, distanceUnit, blockedUserIds])
 
     // ─────────────────────────────────────────────
     // EVENT CLUSTERING (memoized)

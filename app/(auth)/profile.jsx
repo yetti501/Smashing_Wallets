@@ -236,6 +236,7 @@ export default function ProfileScreen() {
 
     const menuItems = [
         { icon: 'key-outline', title: 'Change Password', onPress: () => router.push('/changePassword') },
+        { icon: 'ban-outline', title: 'Blocked Users', onPress: () => router.push('/blockedUsers') },
         { icon: 'help-circle-outline', title: 'Help & Support', onPress: () => router.push('/helpSupport') },
         { icon: 'document-text-outline', title: 'Terms of Service', onPress: () => router.push('/termsOfService') },
         { icon: 'shield-checkmark-outline', title: 'Privacy Policy', onPress: () => router.push('/privacyPolicy') },

@@ -8,18 +8,10 @@ const APPWRITE_DATABASE_ID = process.env.APPWRITE_DATABASE_ID || process.env.EXP
 const APPWRITE_COLLECTION_LISTINGS_ID = process.env.APPWRITE_COLLECTION_LISTINGS_ID || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_LISTINGS_ID;
 const APPWRITE_COLLECTION_NOTES_ID = process.env.APPWRITE_COLLECTION_NOTES_ID || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_NOTES_ID;
 const APPWRITE_COLLECTION_SAVED_EVENTS_ID = process.env.APPWRITE_COLLECTION_SAVED_EVENTS_ID || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_SAVED_EVENTS_ID;
+const APPWRITE_COLLECTION_REPORTS_ID = process.env.APPWRITE_COLLECTION_REPORTS_ID || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_REPORTS_ID;
+const APPWRITE_COLLECTION_BLOCKED_USERS_ID = process.env.APPWRITE_COLLECTION_BLOCKED_USERS_ID || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_BLOCKED_USERS_ID;
 const APPWRITE_BUCKET_ID = process.env.APPWRITE_BUCKET_ID || process.env.EXPO_PUBLIC_APPWRITE_BUCKET_ID;
 
-console.log('--- Config Environment Check ---');
-console.log('Google Maps Key Found:', !!GOOGLE_MAPS_API_KEY);
-console.log('Appwrite Endpoint Found:', !!APPWRITE_ENDPOINT);
-console.log('Appwrite Project ID: ', !!APPWRITE_PROJECT_ID);
-console.log('Appwrite Database ID: ', !!APPWRITE_DATABASE_ID);
-console.log('Appwrite Collection Listings ID: ', !!APPWRITE_COLLECTION_LISTINGS_ID);
-console.log('Appwrite Collection Notes ID: ', !!APPWRITE_COLLECTION_NOTES_ID);
-console.log('Appwrite Collection Saved Events ID: ', !!APPWRITE_COLLECTION_SAVED_EVENTS_ID);
-console.log('Appwrite Bucket ID:', !!APPWRITE_BUCKET_ID);
-console.log('-------------------------------');
 
 export default ({ config }) => {
     return {
@@ -83,6 +75,12 @@ export default ({ config }) => {
                 {
                     calendarPermission: 'Allow Smashing Wallets to add events to your calendar.'
                 }
+            ],
+            [
+                'expo-image-picker',
+                {
+                    photosPermission: 'Allow Smashing Wallets to access your photos so you can upload images to your listings.'
+                }
             ]
         ],
         extra: {
@@ -96,6 +94,8 @@ export default ({ config }) => {
             appwriteCollectionListingsId: APPWRITE_COLLECTION_LISTINGS_ID,
             appwriteCollectionNotesId: APPWRITE_COLLECTION_NOTES_ID,
             appwriteCollectionSavedEventsId: APPWRITE_COLLECTION_SAVED_EVENTS_ID,
+            appwriteCollectionReportsId: APPWRITE_COLLECTION_REPORTS_ID,
+            appwriteCollectionBlockedUsersId: APPWRITE_COLLECTION_BLOCKED_USERS_ID,
             appwriteBucketId: APPWRITE_BUCKET_ID,
             googleMapsApiKey: GOOGLE_MAPS_API_KEY,
         },

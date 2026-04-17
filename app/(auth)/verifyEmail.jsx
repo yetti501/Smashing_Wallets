@@ -10,19 +10,18 @@ import ThemedSafeArea from '../../components/ThemedSafeArea'
 export default function VerifyEmailScreen() {
     const { userId, secret } = useLocalSearchParams()
     const { confirmEmailVerification, user } = useAuth()
-    const [status, setStatus] = useState('verifying') // 'verifying' | 'success' | 'error'
+    const [status, setStatus] = useState('ready') // 'ready' | 'verifying' | 'success' | 'error'
     const [errorMessage, setErrorMessage] = useState('')
 
     useEffect(() => {
-        if (userId && secret) {
-            handleVerification()
-        } else {
+        if (!userId || !secret) {
             setStatus('error')
             setErrorMessage('Invalid verification link. Please check your email and try again.')
         }
     }, [userId, secret])
 
     const handleVerification = async () => {
+        setStatus('verifying')
         try {
             await confirmEmailVerification(userId, secret)
             setStatus('success')
@@ -42,6 +41,24 @@ export default function VerifyEmailScreen() {
         } else {
             router.replace('/login')
         }
+    }
+
+    if (status === 'ready') {
+        return (
+            <ThemedSafeArea centered>
+                <View style={styles.container}>
+                    <Ionicons name="mail-outline" size={64} color={COLORS.primary} />
+                    <Text style={styles.title}>Confirm Your Email</Text>
+                    <Text style={styles.message}>
+                        Tap the button below to verify your email address and activate your account.
+                    </Text>
+                    <ThemedButton
+                        action={handleVerification}
+                        buttonText="Verify My Email"
+                    />
+                </View>
+            </ThemedSafeArea>
+        )
     }
 
     if (status === 'verifying') {

@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { COLORS, SPACING, RADIUS } from '../../constants/Colors'
 import ThemedSafeArea from '../../components/ThemedSafeArea'
 
-const LAST_UPDATED = 'November 29, 2025'
+const LAST_UPDATED = 'April 16, 2026'
 const APP_NAME = 'Smashing Wallets'
 const COMPANY_NAME = 'Smashing Wallets'
 const CONTACT_EMAIL = 'support@smashingwallets.com'
@@ -62,7 +62,7 @@ export default function TermsOfServiceScreen() {
                         <Text style={styles.bulletItem}>• Notify us immediately of any unauthorized use</Text>
                     </View>
                     <Text style={styles.paragraph}>
-                        You must be at least 13 years old to create an account. If you are under 18, you represent that you have parental consent.
+                        You must be at least 18 years old to create an account and use this App.
                     </Text>
                 </View>
 

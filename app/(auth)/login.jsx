@@ -91,10 +91,10 @@ export default function LoginScreen() {
             if(error.message) {
                 if (error.message.includes('Invalid credentials') || error.message.includes('user_not_found')) {
                     title = 'Incorrect Email or Password'
-                    message = 'No account found with that email, or the password is incorrect. Please double-check your credentials or sign up for a new account.'
+                    message = 'The email or password you entered is incorrect. Please double-check your credentials and try again.'
                     setErrors({
-                        email: 'Check your email address',
-                        password: 'Check your password'
+                        email: ' ',
+                        password: ' '
                     })
                 } else if (error.message.includes('user_blocked')) {
                     title = 'Account Blocked'

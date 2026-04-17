@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { COLORS, SPACING, RADIUS } from '../../constants/Colors'
 import ThemedSafeArea from '../../components/ThemedSafeArea'
 
-const LAST_UPDATED = 'November 29, 2025'
+const LAST_UPDATED = 'April 16, 2026'
 const APP_NAME = 'Smashing Wallets'
 const COMPANY_NAME = 'Smashing Wallets'
 const CONTACT_EMAIL = 'support@smashingwallets.com'
@@ -159,12 +159,74 @@ export default function PrivacyPolicyScreen() {
                     </Text>
                 </View>
 
+                {/* CCPA - California Privacy Rights */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>California Privacy Rights (CCPA)</Text>
+                    <Text style={styles.paragraph}>
+                        If you are a California resident, you have specific rights under the California Consumer Privacy Act (CCPA):
+                    </Text>
+                    <View style={styles.bulletList}>
+                        <Text style={styles.bulletItem}>• <Text style={styles.bold}>Right to Know</Text> — You can request details about what personal information we have collected about you, the categories of sources, the purpose for collection, and any third parties we share it with</Text>
+                        <Text style={styles.bulletItem}>• <Text style={styles.bold}>Right to Delete</Text> — You can request that we delete your personal information. You can do this directly in the app via Settings → Delete Account, or by emailing us</Text>
+                        <Text style={styles.bulletItem}>• <Text style={styles.bold}>Right to Opt-Out of Sale</Text> — We do not sell your personal information to third parties. No opt-out is necessary</Text>
+                        <Text style={styles.bulletItem}>• <Text style={styles.bold}>Right to Non-Discrimination</Text> — We will not discriminate against you for exercising any of your CCPA rights</Text>
+                    </View>
+                    <Text style={styles.paragraph}>
+                        To exercise any of these rights, please contact us at {CONTACT_EMAIL}. We will respond to verifiable requests within 45 days.
+                    </Text>
+                    <Text style={styles.subheading}>Categories of Personal Information Collected</Text>
+                    <View style={styles.bulletList}>
+                        <Text style={styles.bulletItem}>• <Text style={styles.bold}>Identifiers</Text> — Name, email address, phone number (optional), account ID</Text>
+                        <Text style={styles.bulletItem}>• <Text style={styles.bold}>Geolocation data</Text> — Approximate device location (only with your permission)</Text>
+                        <Text style={styles.bulletItem}>• <Text style={styles.bold}>User-generated content</Text> — Event listings, photos, and descriptions you create</Text>
+                        <Text style={styles.bulletItem}>• <Text style={styles.bold}>Internet activity</Text> — Basic usage data such as saved events and app preferences</Text>
+                    </View>
+                    <Text style={styles.paragraph}>
+                        We do not collect sensitive personal information as defined by the CCPA, such as Social Security numbers, financial account details, or biometric data.
+                    </Text>
+                </View>
+
+                {/* GDPR - European Privacy Rights */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>European Privacy Rights (GDPR)</Text>
+                    <Text style={styles.paragraph}>
+                        If you are located in the European Economic Area (EEA), United Kingdom, or Switzerland, you have additional rights under the General Data Protection Regulation (GDPR):
+                    </Text>
+                    <View style={styles.bulletList}>
+                        <Text style={styles.bulletItem}>• <Text style={styles.bold}>Right of Access</Text> — You can request a copy of the personal data we hold about you</Text>
+                        <Text style={styles.bulletItem}>• <Text style={styles.bold}>Right to Rectification</Text> — You can request correction of inaccurate or incomplete data. You can also update most information directly in the app</Text>
+                        <Text style={styles.bulletItem}>• <Text style={styles.bold}>Right to Erasure</Text> — You can request deletion of your personal data. Use the Delete Account feature in Settings or contact us</Text>
+                        <Text style={styles.bulletItem}>• <Text style={styles.bold}>Right to Restrict Processing</Text> — You can request that we limit how we use your data in certain circumstances</Text>
+                        <Text style={styles.bulletItem}>• <Text style={styles.bold}>Right to Data Portability</Text> — You can request a copy of your data in a structured, machine-readable format</Text>
+                        <Text style={styles.bulletItem}>• <Text style={styles.bold}>Right to Object</Text> — You can object to our processing of your personal data in certain circumstances</Text>
+                        <Text style={styles.bulletItem}>• <Text style={styles.bold}>Right to Withdraw Consent</Text> — Where we rely on your consent, you can withdraw it at any time (e.g., revoking location permission in your device settings)</Text>
+                    </View>
+
+                    <Text style={styles.subheading}>Legal Basis for Processing</Text>
+                    <Text style={styles.paragraph}>
+                        We process your personal data based on the following legal grounds:
+                    </Text>
+                    <View style={styles.bulletList}>
+                        <Text style={styles.bulletItem}>• <Text style={styles.bold}>Contract performance</Text> — Processing necessary to provide you with the {APP_NAME} service (account management, event listings)</Text>
+                        <Text style={styles.bulletItem}>• <Text style={styles.bold}>Consent</Text> — Processing based on your explicit consent (location data, photos)</Text>
+                        <Text style={styles.bulletItem}>• <Text style={styles.bold}>Legitimate interests</Text> — Processing necessary for our legitimate business interests (security, service improvement), balanced against your rights</Text>
+                    </View>
+
+                    <Text style={styles.subheading}>International Data Transfers</Text>
+                    <Text style={styles.paragraph}>
+                        Your data may be transferred to and processed in the United States, where our servers are located. We ensure appropriate safeguards are in place for international transfers in accordance with applicable data protection laws.
+                    </Text>
+                    <Text style={styles.paragraph}>
+                        To exercise any of these rights, please contact us at {CONTACT_EMAIL}. We will respond within 30 days. If you are unsatisfied with our response, you have the right to lodge a complaint with your local data protection authority.
+                    </Text>
+                </View>
+
                 {/* Children's Privacy */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Children's Privacy</Text>
                     <Text style={styles.paragraph}>
-                        {APP_NAME} is not intended for children under 13 years of age. We do not knowingly collect personal information from children under 13. 
-                        If you believe we have collected data from a child under 13, please contact us immediately.
+                        {APP_NAME} is intended for users who are 18 years of age or older. We do not knowingly collect personal information from anyone under 18.
+                        If you believe we have collected data from someone under 18, please contact us immediately and we will promptly delete that information.
                     </Text>
                 </View>
 
