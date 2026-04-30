@@ -37,7 +37,7 @@ const AuthLayoutNav = () => {
             } 
         } else if (user && inAuthGroup) {
             // Logged in - allow profile and legal screens
-            const allowedScreens = ['profile', 'privacyPolicy', 'termsOfService', 'verifyEmail', 'changePassword', 'helpSupport', 'blockedUsers']
+            const allowedScreens = ['profile', 'privacyPolicy', 'termsOfService', 'verifyEmail', 'changePassword', 'helpSupport', 'blockedUsers', 'notifications']
             if (!allowedScreens.includes(segments[1])) {
                 router.replace('/profile')
             }
@@ -57,6 +57,7 @@ const AuthLayoutNav = () => {
                 <Stack.Screen name="changePassword" />
                 <Stack.Screen name="helpSupport" />
                 <Stack.Screen name="blockedUsers" />
+                <Stack.Screen name="notifications" />
                 <Stack.Screen name="privacyPolicy" />
                 <Stack.Screen name="termsOfService" />
             </Stack>

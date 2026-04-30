@@ -29,6 +29,7 @@ const AddressAutocomplete = ({
     placeholder = 'Enter address',
     style,
     inputStyle,
+    inline = false,
 }) => {
     const [inputValue, setInputValue] = useState(value)
     const [suggestions, setSuggestions] = useState([])
@@ -108,7 +109,6 @@ const AddressAutocomplete = ({
         Keyboard.dismiss()
 
         try {
-            // Get full place details
             const details = await googlePlacesService.getPlaceDetails(
                 suggestion.placeId,
                 sessionTokenRef.current
@@ -116,11 +116,8 @@ const AddressAutocomplete = ({
 
             if (details) {
                 setInputValue(details.formattedAddress)
-                
-                // Generate new session token for next search
                 sessionTokenRef.current = googlePlacesService.generateSessionToken()
 
-                // Notify parent with full address details
                 if (onAddressSelect) {
                     onAddressSelect({
                         location: details.formattedAddress,
@@ -206,23 +203,26 @@ const AddressAutocomplete = ({
 
             {/* Suggestions Dropdown */}
             {showSuggestions && suggestions.length > 0 && (
-                <View style={styles.suggestionsContainer}>
+                <View style={[
+                    styles.suggestionsContainer,
+                    inline && styles.suggestionsContainerInline,
+                ]}>
                     {suggestions.map((suggestion, index) => (
-                        <TouchableOpacity
+                        <View
                             key={suggestion.placeId}
                             style={[
                                 styles.suggestionItem,
-                                index === suggestions.length - 1 && styles.suggestionItemLast
+                                index === suggestions.length - 1 && styles.suggestionItemLast,
                             ]}
-                            onPress={() => handleSuggestionSelect(suggestion)}
+                            onTouchEnd={() => handleSuggestionSelect(suggestion)}
                         >
-                            <Ionicons 
-                                name="location" 
-                                size={18} 
-                                color={COLORS.primary} 
+                            <Ionicons
+                                name="location"
+                                size={18}
+                                color={COLORS.primary}
                                 style={styles.suggestionIcon}
                             />
-                            <View style={styles.suggestionText}>
+                            <View style={styles.suggestionText} pointerEvents="none">
                                 <Text style={styles.suggestionMain} numberOfLines={1}>
                                     {suggestion.mainText}
                                 </Text>
@@ -230,7 +230,7 @@ const AddressAutocomplete = ({
                                     {suggestion.secondaryText}
                                 </Text>
                             </View>
-                        </TouchableOpacity>
+                        </View>
                     ))}
                     
                     {/* Google Attribution */}
@@ -286,6 +286,10 @@ const styles = StyleSheet.create({
         elevation: 8,
         maxHeight: 250,
         overflow: 'hidden',
+    },
+    suggestionsContainerInline: {
+        position: 'relative',
+        top: 0,
     },
     suggestionItem: {
         flexDirection: 'row',

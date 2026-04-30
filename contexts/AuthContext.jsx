@@ -3,6 +3,7 @@ import { ID, ExecutionMethod } from 'appwrite'
 import { router } from 'expo-router'
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { sendTransactionalEmail } from '../lib/emailService'
+import { bootstrapDefaultPreferences, syncPushTokenIfNeeded } from '../lib/notificationService'
 
 const AuthContext = createContext()
 
@@ -298,12 +299,18 @@ export const AuthProvider = ({ children }) => {
     const login = async (email, password) => {
         const session = await authService.login(email, password)
         await checkUser()
-        
+
         const loggedInUser = await authService.getCurrentUser()
         notifyLoginListeners(loggedInUser)
-        
+
+        // Best-effort: fetch a push token in the background if user has
+        // notifications enabled but no token yet (e.g. signed in on new device)
+        if (loggedInUser?.$id) {
+            syncPushTokenIfNeeded(loggedInUser.$id)
+        }
+
         // router.replace('/')  // <-- Add this line
-        
+
         return session
     }
 
@@ -314,6 +321,16 @@ export const AuthProvider = ({ children }) => {
         // Get the updated user and notify listeners
         const loggedInUser = await authService.getCurrentUser()
         notifyLoginListeners(loggedInUser)
+
+        // Default-on notifications: create a prefs row with enabled=true
+        // subscribed to all event types. Token + location get filled in later
+        // when the user grants permission (on first app launch / visit to
+        // the Notifications screen).
+        if (loggedInUser?.$id) {
+            bootstrapDefaultPreferences(loggedInUser.$id).then(() => {
+                syncPushTokenIfNeeded(loggedInUser.$id)
+            })
+        }
 
         // Send verification email + welcome email (non-blocking)
         try {

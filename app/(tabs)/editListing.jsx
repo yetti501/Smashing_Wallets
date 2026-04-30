@@ -21,7 +21,7 @@ import ImagePickerGrid from '../../components/ImagePickerGrid'
 import { useListings } from '../../contexts/ListingsContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { COLORS, SPACING, RADIUS } from '../../constants/Colors'
-import { EVENT_TYPES, EVENT_TYPE_LABELS } from '../../lib/appwrite'
+import { EVENT_TYPES, EVENT_TYPE_LABELS, EVENT_TYPE_COLORS } from '../../lib/appwrite'
 import { imageService } from '../../lib/imageService'
 
 export default function EditListingScreen() {
@@ -590,23 +590,29 @@ export default function EditListingScreen() {
                     <View style={styles.section}>
                         <Text style={styles.label}>Event Type *</Text>
                         <View style={styles.eventTypeGrid}>
-                            {Object.entries(EVENT_TYPE_LABELS).map(([key, label]) => (
-                                <TouchableOpacity
-                                    key={key}
-                                    style={[
-                                        styles.eventTypeButton,
-                                        formData.eventType === key && styles.eventTypeButtonActive
-                                    ]}
-                                    onPress={() => handleInputChange('eventType', key)}
-                                >
-                                    <Text style={[
-                                        styles.eventTypeButtonText,
-                                        formData.eventType === key && styles.eventTypeButtonTextActive
-                                    ]}>
-                                        {label}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
+                            {Object.entries(EVENT_TYPE_LABELS).map(([key, label]) => {
+                                const tileColor = EVENT_TYPE_COLORS[key] || COLORS.primary
+                                const isActive = formData.eventType === key
+                                return (
+                                    <TouchableOpacity
+                                        key={key}
+                                        style={[
+                                            styles.eventTypeButton,
+                                            { borderColor: tileColor },
+                                            isActive && { backgroundColor: tileColor }
+                                        ]}
+                                        onPress={() => handleInputChange('eventType', key)}
+                                    >
+                                        <Text style={[
+                                            styles.eventTypeButtonText,
+                                            { color: isActive ? COLORS.buttonPrimaryText : tileColor },
+                                            isActive && { fontWeight: '600' }
+                                        ]}>
+                                            {label}
+                                        </Text>
+                                    </TouchableOpacity>
+                                )
+                            })}
                         </View>
                     </View>
 

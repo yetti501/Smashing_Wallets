@@ -11,12 +11,14 @@ import {
     Dimensions,
     ScrollView,
     AppState,
+    Platform,
 } from 'react-native'
 import MapView, { Marker } from 'react-native-maps'
 import { router } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import * as Location from 'expo-location'
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import DateTimePicker from '@react-native-community/datetimepicker'
 // useFocusEffect re-runs every time this screen becomes visible.
 // This is the key fix — useEffect with [] only fires on mount,
 // but in a tab navigator the screen stays mounted when you switch tabs.
@@ -28,7 +30,7 @@ import googlePlacesService from '../../lib/googlePlacesService'
 import { useAuth } from '../../contexts/AuthContext'
 import { useBlockedUsers } from '../../contexts/BlockedUsersContext'
 import { COLORS, SPACING, RADIUS, SHADOWS } from '../../constants/Colors'
-import { EVENT_TYPES, EVENT_TYPE_LABELS, EVENT_TYPE_ICONS } from '../../lib/appwrite'
+import { EVENT_TYPES, EVENT_TYPE_LABELS, EVENT_TYPE_ICONS, EVENT_TYPE_COLORS } from '../../lib/appwrite'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window')
 
@@ -87,20 +89,6 @@ const CUSTOM_MAP_STYLE = [
     }
 ]
 
-// Each event type gets its own color for map markers and filter pills
-const EVENT_TYPE_COLORS = {
-    [EVENT_TYPES.YARD_SALE]: '#22C55E',
-    [EVENT_TYPES.GARAGE_SALE]: '#3B82F6',
-    [EVENT_TYPES.ESTATE_SALE]: '#8B5CF6',
-    [EVENT_TYPES.BAKE_SALE]: '#F59E0B',
-    [EVENT_TYPES.CRAFT_FAIR]: '#EC4899',
-    [EVENT_TYPES.FARMERS_MARKET]: '#10B981',
-    [EVENT_TYPES.FLEA_MARKET]: '#6366F1',
-    [EVENT_TYPES.SWAP_MEET]: '#EF4444',
-    [EVENT_TYPES.BOOK_SALE]: '#0EA5E9',
-    [EVENT_TYPES.OTHER]: '#6B7280',
-}
-
 // How far the user must pan the map (in km) before we show "Search this area"
 const MIN_MOVE_DISTANCE = 1
 
@@ -135,6 +123,9 @@ export default function MapScreen() {
     const [searchRadius, setSearchRadius] = useState(10)
     const [selectedEventType, setSelectedEventType] = useState(null)
     const [showPastEvents, setShowPastEvents] = useState(false)
+    // Date range filter (YYYY-MM-DD strings or null for no bound)
+    const [dateRangeStart, setDateRangeStart] = useState(null)
+    const [dateRangeEnd, setDateRangeEnd] = useState(null)
 
     // ── UI State ──
     const [selectedEvent, setSelectedEvent] = useState(null)
@@ -142,6 +133,9 @@ export default function MapScreen() {
     const [showSearchButton, setShowSearchButton] = useState(false)
     const [clusterModalVisible, setClusterModalVisible] = useState(false)
     const [clusterEvents, setClusterEvents] = useState([])
+    const [showRangeStartPicker, setShowRangeStartPicker] = useState(false)
+    const [showRangeEndPicker, setShowRangeEndPicker] = useState(false)
+    const [datePickerValue, setDatePickerValue] = useState(new Date())
 
     // ── Refs ──
     const mapRef = useRef(null)
@@ -184,6 +178,54 @@ export default function MapScreen() {
     }
 
     const getUnitLabel = () => distanceUnit === 'miles' ? 'mi' : 'km'
+
+    // ─────────────────────────────────────────────
+    // DATE HELPERS (for date range filter)
+    // ─────────────────────────────────────────────
+    const formatDateForStorage = (date) => {
+        const d = new Date(date)
+        const year = d.getFullYear()
+        const month = String(d.getMonth() + 1).padStart(2, '0')
+        const day = String(d.getDate()).padStart(2, '0')
+        return `${year}-${month}-${day}`
+    }
+
+    const formatDateForDisplay = (dateString) => {
+        if (!dateString) return ''
+        const date = new Date(dateString + 'T00:00:00')
+        return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+    }
+
+    const openRangePicker = (which) => {
+        const existing = which === 'start' ? dateRangeStart : dateRangeEnd
+        setDatePickerValue(existing ? new Date(existing + 'T00:00:00') : new Date())
+        if (which === 'start') setShowRangeStartPicker(true)
+        else setShowRangeEndPicker(true)
+    }
+
+    const handleRangeStartChange = (_event, selectedDate) => {
+        if (Platform.OS === 'android') setShowRangeStartPicker(false)
+        if (selectedDate) {
+            const formatted = formatDateForStorage(selectedDate)
+            setDateRangeStart(formatted)
+            // If end is before new start, clear it
+            if (dateRangeEnd && dateRangeEnd < formatted) setDateRangeEnd(null)
+            if (Platform.OS === 'ios') setShowRangeStartPicker(false)
+        }
+    }
+
+    const handleRangeEndChange = (_event, selectedDate) => {
+        if (Platform.OS === 'android') setShowRangeEndPicker(false)
+        if (selectedDate) {
+            setDateRangeEnd(formatDateForStorage(selectedDate))
+            if (Platform.OS === 'ios') setShowRangeEndPicker(false)
+        }
+    }
+
+    const clearDateRange = () => {
+        setDateRangeStart(null)
+        setDateRangeEnd(null)
+    }
 
     // ─────────────────────────────────────────────
     // ZOOM MAP TO MATCH SEARCH RADIUS
@@ -498,7 +540,10 @@ export default function MapScreen() {
 
     const formatDate = (dateString) => {
         if (!dateString) return ''
-        const date = new Date(dateString + 'T00:00:00')
+        const date = dateString.includes('T')
+            ? new Date(dateString)
+            : new Date(dateString + 'T00:00:00')
+        if (isNaN(date.getTime())) return ''
         return date.toLocaleDateString('en-US', {
             weekday: 'short',
             month: 'short',
@@ -571,16 +616,25 @@ export default function MapScreen() {
             // Filter by event type if one is selected
             if (selectedEventType && event.eventType !== selectedEventType) return false
 
-            // Hide past events unless toggled on
-            if (!showPastEvents) {
+            const eventDate = (event.date || event.startDate || '').split('T')[0]
+            const eventEndDate = (event.endDate || event.date || event.startDate || '').split('T')[0]
+
+            // Date range filter — when set, overrides the past-events toggle
+            const hasDateRange = dateRangeStart || dateRangeEnd
+            if (hasDateRange) {
+                if (!eventDate) return false
+                // Event overlaps range if its span intersects [start, end]
+                if (dateRangeStart && eventEndDate && eventEndDate < dateRangeStart) return false
+                if (dateRangeEnd && eventDate > dateRangeEnd) return false
+            } else if (!showPastEvents) {
+                // Hide past events unless toggled on
                 const today = new Date().toISOString().split('T')[0]
-                const eventDate = (event.date || event.startDate || '').split('T')[0]
                 if (eventDate && eventDate < today) return false
             }
 
             return true
         })
-    }, [listings, searchCenter, searchRadius, selectedEventType, showPastEvents, distanceUnit, blockedUserIds])
+    }, [listings, searchCenter, searchRadius, selectedEventType, showPastEvents, dateRangeStart, dateRangeEnd, distanceUnit, blockedUserIds])
 
     // ─────────────────────────────────────────────
     // EVENT CLUSTERING (memoized)
@@ -902,6 +956,7 @@ export default function MapScreen() {
                 visible={filterModalVisible}
                 animationType="slide"
                 transparent={true}
+                statusBarTranslucent={true}
                 onRequestClose={() => setFilterModalVisible(false)}
             >
                 <Pressable
@@ -921,14 +976,75 @@ export default function MapScreen() {
                             <TouchableOpacity
                                 style={styles.toggleOption}
                                 onPress={() => setShowPastEvents(!showPastEvents)}
+                                disabled={!!(dateRangeStart || dateRangeEnd)}
                             >
-                                <Text style={styles.toggleLabel}>Show Past Events</Text>
+                                <Text style={[
+                                    styles.toggleLabel,
+                                    (dateRangeStart || dateRangeEnd) && { color: COLORS.textTertiary }
+                                ]}>Show Past Events</Text>
                                 <Ionicons
                                     name={showPastEvents ? "checkbox" : "square-outline"}
                                     size={24}
-                                    color={COLORS.primary}
+                                    color={(dateRangeStart || dateRangeEnd) ? COLORS.textTertiary : COLORS.primary}
                                 />
                             </TouchableOpacity>
+
+                            {/* Date Range Filter */}
+                            <View style={styles.radiusSection}>
+                                <View style={styles.dateRangeHeader}>
+                                    <Text style={styles.radiusSectionTitle}>Date Range</Text>
+                                    {(dateRangeStart || dateRangeEnd) && (
+                                        <TouchableOpacity onPress={clearDateRange}>
+                                            <Text style={styles.clearLink}>Clear</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                                <View style={styles.dateRangeRow}>
+                                    <TouchableOpacity
+                                        style={styles.dateRangeButton}
+                                        onPress={() => openRangePicker('start')}
+                                    >
+                                        <Ionicons name="calendar-outline" size={18} color={COLORS.primary} />
+                                        <Text style={[
+                                            styles.dateRangeButtonText,
+                                            dateRangeStart && styles.dateRangeButtonTextSelected
+                                        ]}>
+                                            {dateRangeStart ? formatDateForDisplay(dateRangeStart) : 'Start date'}
+                                        </Text>
+                                    </TouchableOpacity>
+                                    <Text style={styles.dateRangeSeparator}>—</Text>
+                                    <TouchableOpacity
+                                        style={styles.dateRangeButton}
+                                        onPress={() => openRangePicker('end')}
+                                    >
+                                        <Ionicons name="calendar-outline" size={18} color={COLORS.primary} />
+                                        <Text style={[
+                                            styles.dateRangeButtonText,
+                                            dateRangeEnd && styles.dateRangeButtonTextSelected
+                                        ]}>
+                                            {dateRangeEnd ? formatDateForDisplay(dateRangeEnd) : 'End date'}
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+
+                            {showRangeStartPicker && (
+                                <DateTimePicker
+                                    value={datePickerValue}
+                                    mode="date"
+                                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                                    onChange={handleRangeStartChange}
+                                />
+                            )}
+                            {showRangeEndPicker && (
+                                <DateTimePicker
+                                    value={datePickerValue}
+                                    mode="date"
+                                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                                    onChange={handleRangeEndChange}
+                                    minimumDate={dateRangeStart ? new Date(dateRangeStart + 'T00:00:00') : undefined}
+                                />
+                            )}
 
                             {/* Search Radius Options */}
                             <View style={styles.radiusSection}>
@@ -972,6 +1088,7 @@ export default function MapScreen() {
                 visible={clusterModalVisible}
                 animationType="slide"
                 transparent={true}
+                statusBarTranslucent={true}
                 onRequestClose={() => setClusterModalVisible(false)}
             >
                 <Pressable
@@ -1360,6 +1477,47 @@ const styles = StyleSheet.create({
     },
     radiusOptionTextActive: {
         color: COLORS.buttonPrimaryText,
+    },
+    dateRangeHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: SPACING.md,
+    },
+    clearLink: {
+        fontSize: 14,
+        color: COLORS.primary,
+        fontWeight: '500',
+    },
+    dateRangeRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: SPACING.sm,
+    },
+    dateRangeButton: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: SPACING.sm,
+        paddingVertical: SPACING.md,
+        paddingHorizontal: SPACING.md,
+        backgroundColor: COLORS.surface,
+        borderRadius: RADIUS.md,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+    },
+    dateRangeButtonText: {
+        fontSize: 14,
+        color: COLORS.textTertiary,
+        flex: 1,
+    },
+    dateRangeButtonTextSelected: {
+        color: COLORS.text,
+        fontWeight: '500',
+    },
+    dateRangeSeparator: {
+        color: COLORS.textSecondary,
+        fontSize: 16,
     },
     applyButton: {
         backgroundColor: COLORS.primary,

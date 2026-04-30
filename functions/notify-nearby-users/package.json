@@ -1,0 +1,10 @@
+{
+  "name": "notify-nearby-users",
+  "version": "1.0.0",
+  "description": "Sends push notifications to subscribed users when a new listing is created",
+  "main": "src/main.js",
+  "type": "module",
+  "dependencies": {
+    "node-appwrite": "^14.0.0"
+  }
+}

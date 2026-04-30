@@ -10,6 +10,7 @@ const APPWRITE_COLLECTION_NOTES_ID = process.env.APPWRITE_COLLECTION_NOTES_ID ||
 const APPWRITE_COLLECTION_SAVED_EVENTS_ID = process.env.APPWRITE_COLLECTION_SAVED_EVENTS_ID || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_SAVED_EVENTS_ID;
 const APPWRITE_COLLECTION_REPORTS_ID = process.env.APPWRITE_COLLECTION_REPORTS_ID || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_REPORTS_ID;
 const APPWRITE_COLLECTION_BLOCKED_USERS_ID = process.env.APPWRITE_COLLECTION_BLOCKED_USERS_ID || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_BLOCKED_USERS_ID;
+const APPWRITE_COLLECTION_NOTIFICATION_PREFERENCES_ID = process.env.APPWRITE_COLLECTION_NOTIFICATION_PREFERENCES_ID || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_NOTIFICATION_PREFERENCES_ID;
 const APPWRITE_BUCKET_ID = process.env.APPWRITE_BUCKET_ID || process.env.EXPO_PUBLIC_APPWRITE_BUCKET_ID;
 
 
@@ -81,6 +82,17 @@ export default ({ config }) => {
                 {
                     photosPermission: 'Allow Smashing Wallets to access your photos so you can upload images to your listings.'
                 }
+            ],
+            [
+                'expo-notifications',
+                {
+                    icon: './assets/notification-icon.png',
+                    color: '#FF5747'
+                }
+            ],
+            [
+                './plugins/with-adi-registration.js',
+                { snippet: 'CSTWNZAHXRZ5QAAAAAAAAAAAAA' }
             ]
         ],
         extra: {
@@ -96,6 +108,7 @@ export default ({ config }) => {
             appwriteCollectionSavedEventsId: APPWRITE_COLLECTION_SAVED_EVENTS_ID,
             appwriteCollectionReportsId: APPWRITE_COLLECTION_REPORTS_ID,
             appwriteCollectionBlockedUsersId: APPWRITE_COLLECTION_BLOCKED_USERS_ID,
+            appwriteCollectionNotificationPreferencesId: APPWRITE_COLLECTION_NOTIFICATION_PREFERENCES_ID,
             appwriteBucketId: APPWRITE_BUCKET_ID,
             googleMapsApiKey: GOOGLE_MAPS_API_KEY,
         },

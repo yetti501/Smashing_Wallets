@@ -115,8 +115,10 @@ export default function RegisterScreen() {
         let errorMessage = 'An error occurred during registration'
         
         if(error.message) {
-            if(error.message.includes('user already exists')) {
-                    errorMessage = 'An account with this email already exists'
+            if(error.message.includes('user already exists')
+                || error.message.includes('same id, email, or phone')
+                || error.message.includes('already exists in this project')) {
+                    errorMessage = 'A user with the same id or email already a member of Smashing Wallets'
                 } else if(error.message.includes('Invalid email')) {
                     errorMessage = 'Please enter a valid email address'
                 } else if(error.message.includes('Password')) {

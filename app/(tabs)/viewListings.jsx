@@ -1,7 +1,7 @@
 import { StyleSheet, View, FlatList, TouchableOpacity, Pressable, Text, Modal, ActivityIndicator } from 'react-native'
 import { router, useFocusEffect } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 
 import ThemedSafeArea from '../../components/ThemedSafeArea'
 import ThemedModal from '../../components/ThemedModal'
@@ -19,7 +19,7 @@ import { COLORS, SPACING } from '../../constants/Colors'
 import { EVENT_TYPES, EVENT_TYPE_LABELS } from '../../lib/appwrite'
 
 export default function ViewListingScreen() {
-    const { user, loading: authLoading, checkUser } = useAuth()
+    const { user, loading: authLoading, checkUser, sendEmailVerification } = useAuth()
     const {
         listings,
         loading, 
@@ -31,6 +31,12 @@ export default function ViewListingScreen() {
 
     const [initialLoad, setInitialLoad] = useState(true)
     const [loginModal, setLoginModal] = useState(false)
+    const [verifyModalVisible, setVerifyModalVisible] = useState(false)
+    const [verifySuccessModal, setVerifySuccessModal] = useState(false)
+    const [verifyErrorModal, setVerifyErrorModal] = useState({ visible: false, message: '' })
+    const [verificationSending, setVerificationSending] = useState(false)
+    const [verifyCooldown, setVerifyCooldown] = useState(0)
+    const cooldownRef = useRef(null)
     const [filterModalVisible, setFilterModalVisible] = useState(false)
     const [filters, setFilters] = useState({
         eventType: null, 
@@ -114,14 +120,69 @@ export default function ViewListingScreen() {
         })
     }
     
-    // Push to add new listings page 
+    // Cleanup cooldown timer on unmount
+    useEffect(() => {
+        return () => {
+            if (cooldownRef.current) clearInterval(cooldownRef.current)
+        }
+    }, [])
+
+    const startCooldown = () => {
+        setVerifyCooldown(60)
+        if (cooldownRef.current) clearInterval(cooldownRef.current)
+        cooldownRef.current = setInterval(() => {
+            setVerifyCooldown(prev => {
+                if (prev <= 1) {
+                    clearInterval(cooldownRef.current)
+                    cooldownRef.current = null
+                    return 0
+                }
+                return prev - 1
+            })
+        }, 1000)
+    }
+
+    const handleSendVerification = async () => {
+        setVerificationSending(true)
+        setVerifyModalVisible(false)
+        try {
+            await sendEmailVerification('https://smashingwallets.com/verify-email')
+            startCooldown()
+            setVerifySuccessModal(true)
+        } catch (error) {
+            if (error.type === 'user_email_already_verified' || error.message?.includes('already verified')) {
+                await checkUser()
+                setVerifyErrorModal({
+                    visible: true,
+                    message: 'Your email is already verified! Tap the + button to create a listing.',
+                    isSuccess: true,
+                })
+                return
+            }
+            let msg = 'Failed to send verification email. Please try again.'
+            if (error.message?.includes('Too many requests')) {
+                msg = 'Too many requests. Please try again later.'
+            }
+            setVerifyErrorModal({ visible: true, message: msg })
+        } finally {
+            setVerificationSending(false)
+        }
+    }
+
+    // Push to add new listings page
     const handleAddListing = () => {
         if (!user) {
             setLoginModal(true)
             return
         }
+        if (!user.emailVerification) {
+            setVerifyModalVisible(true)
+            return
+        }
         router.push('/(tabs)/newListing')
     }
+
+    const canCreateListing = !!user && !!user.emailVerification
 
     const clearFilters = () => {
         setFilters({
@@ -319,8 +380,8 @@ export default function ViewListingScreen() {
                     icon="add"
                     onPress={handleAddListing}
                     style={styles.fab}
-                    backgroundColor={user ? COLORS.primary : COLORS.disabled}
-                    iconColor={user ? COLORS.buttonPrimaryText : COLORS.textTertiary}
+                    backgroundColor={canCreateListing ? COLORS.primary : COLORS.disabled}
+                    iconColor={canCreateListing ? COLORS.buttonPrimaryText : COLORS.textTertiary}
                 />
 
                 {/* Filter Modal */}
@@ -356,6 +417,59 @@ export default function ViewListingScreen() {
                                 setLoginModal(false)
                                 router.push('/login')
                             },
+                        },
+                    ]}
+                />
+
+                {/* Email Verification Required Modal */}
+                <ThemedModal
+                    visible={verifyModalVisible}
+                    onClose={() => setVerifyModalVisible(false)}
+                    icon="mail-outline"
+                    iconColor={COLORS.info}
+                    title="Email Verification Required"
+                    message="You need to verify your email address before you can create event listings. This helps keep our community safe from spam."
+                    buttons={[
+                        { text: 'Cancel', style: 'cancel', onPress: () => setVerifyModalVisible(false) },
+                        {
+                            text: verificationSending ? 'Sending...' : verifyCooldown > 0 ? `Resend (${verifyCooldown}s)` : 'Verify Email',
+                            style: 'primary',
+                            onPress: handleSendVerification,
+                            disabled: verificationSending || verifyCooldown > 0,
+                        },
+                    ]}
+                />
+
+                {/* Verification Email Sent Modal */}
+                <ThemedModal
+                    visible={verifySuccessModal}
+                    onClose={() => setVerifySuccessModal(false)}
+                    icon="mail-outline"
+                    iconColor={COLORS.success}
+                    title="Verification Email Sent"
+                    message="Check your inbox for a verification link. Once you click it, come back and try again."
+                    buttons={[
+                        {
+                            text: 'OK',
+                            style: 'primary',
+                            onPress: () => setVerifySuccessModal(false),
+                        },
+                    ]}
+                />
+
+                {/* Verification Error / Already Verified Modal */}
+                <ThemedModal
+                    visible={verifyErrorModal.visible}
+                    onClose={() => setVerifyErrorModal({ visible: false, message: '' })}
+                    icon={verifyErrorModal.isSuccess ? 'checkmark-circle-outline' : 'alert-circle-outline'}
+                    iconColor={verifyErrorModal.isSuccess ? COLORS.success : COLORS.error}
+                    title={verifyErrorModal.isSuccess ? 'Already Verified' : 'Verification Error'}
+                    message={verifyErrorModal.message}
+                    buttons={[
+                        {
+                            text: 'OK',
+                            style: 'primary',
+                            onPress: () => setVerifyErrorModal({ visible: false, message: '' }),
                         },
                     ]}
                 />
