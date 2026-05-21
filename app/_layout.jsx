@@ -1,3 +1,4 @@
+import Bugsnag from '@bugsnag/expo'
 import { Tabs } from 'expo-router'
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -5,6 +6,14 @@ import { AuthProvider } from '../contexts/AuthContext'
 import { ListingsProvider } from '../contexts/ListingsContext'
 import { SavedEventsProvider } from '../contexts/SavedEventsContext'
 import { BlockedUsersProvider } from '../contexts/BlockedUsersContext'
+import config from '../lib/config'
+
+if (config.bugsnag.apiKey) {
+    Bugsnag.start({
+        apiKey: config.bugsnag.apiKey,
+        releaseStage: config.app.environment,
+    })
+}
 
 const TabsLayout = () => {
     const insets = useSafeAreaInsets()
