@@ -49,6 +49,7 @@ yarn-error.*
 
 # Build artifacts
 *.apk
+functions/**/*.tar.gz
 
 # Misc
 env.txt
