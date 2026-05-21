@@ -12,6 +12,7 @@ const APPWRITE_COLLECTION_REPORTS_ID = process.env.APPWRITE_COLLECTION_REPORTS_I
 const APPWRITE_COLLECTION_BLOCKED_USERS_ID = process.env.APPWRITE_COLLECTION_BLOCKED_USERS_ID || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_BLOCKED_USERS_ID;
 const APPWRITE_COLLECTION_NOTIFICATION_PREFERENCES_ID = process.env.APPWRITE_COLLECTION_NOTIFICATION_PREFERENCES_ID || process.env.EXPO_PUBLIC_APPWRITE_COLLECTION_NOTIFICATION_PREFERENCES_ID;
 const APPWRITE_BUCKET_ID = process.env.APPWRITE_BUCKET_ID || process.env.EXPO_PUBLIC_APPWRITE_BUCKET_ID;
+const BUGSNAG_API_KEY = process.env.BUGSNAG_API_KEY || process.env.EXPO_PUBLIC_BUGSNAG_API_KEY;
 
 
 export default ({ config }) => {
@@ -68,7 +69,8 @@ export default ({ config }) => {
             [
                 'expo-location',
                 {
-                    locationAlwaysAndWhenInUsePermission: 'Allow Smashing Wallets to use your location to show nearby events.'
+                    locationWhenInUsePermission: 'Smashing Wallets uses your location to show nearby wallet-smashing events on the map and sort listings by distance — for example, displaying events within 25 miles of you and notifying you when a new event is posted nearby.',
+                    locationAlwaysAndWhenInUsePermission: 'Smashing Wallets uses your location to show nearby wallet-smashing events on the map and sort listings by distance — for example, displaying events within 25 miles of you and notifying you when a new event is posted nearby.'
                 }
             ],
             [
@@ -111,6 +113,7 @@ export default ({ config }) => {
             appwriteCollectionNotificationPreferencesId: APPWRITE_COLLECTION_NOTIFICATION_PREFERENCES_ID,
             appwriteBucketId: APPWRITE_BUCKET_ID,
             googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+            bugsnagApiKey: BUGSNAG_API_KEY,
         },
     };
 };
