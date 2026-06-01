@@ -121,7 +121,7 @@ export const authService = {
     },
 
     async confirmEmailVerification(userId, secret) {
-        try { 
+        try {
             await account.updateVerification(userId, secret)
             return await account.get()
         } catch (error) {

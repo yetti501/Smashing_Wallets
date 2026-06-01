@@ -20,7 +20,7 @@ export default ({ config }) => {
         ...config,
         name: 'Smashing Wallets App',
         slug: 'smashing_wallets',
-        version: '1.0.0',
+        version: '1.0.8',
         scheme: 'smashingwallets',
         owner: 'smashing-wallets',
         orientation: 'portrait',

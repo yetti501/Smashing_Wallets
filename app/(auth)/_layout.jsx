@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { StyleSheet } from 'react-native'
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
-import { AuthProvider, useAuth } from '../../contexts/AuthContext'
+import { useAuth } from '../../contexts/AuthContext'
 
 const AuthLayoutNav = () => {
     const { user, loading } = useAuth()
@@ -65,14 +65,6 @@ const AuthLayoutNav = () => {
     )
 }
 
-const AuthLayout = () => {
-    return (
-        <AuthProvider>
-            <AuthLayoutNav />
-        </AuthProvider>
-    )
-}
-
-export default AuthLayout
+export default AuthLayoutNav
 
 const styles = StyleSheet.create({})
